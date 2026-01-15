@@ -333,4 +333,27 @@ export const actions = {
       });
     }
   },
+  registerName: async ({ request, platform }) => {
+    try {
+      const fd = await request.formData();
+      const { userId, username } = JSON.parse(fd.get("json") as string);
+      const db = platform?.env?.DB;
+
+      if (!db || !userId || !userId.startsWith("usr_")) {
+        return fail(400, { message: "Invalid request" });
+      }
+
+      const finalName = username?.trim() || "guest";
+
+      await db
+        .prepare("UPDATE scores SET username = ? WHERE user_id = ?")
+        .bind(finalName, userId)
+        .run();
+
+      return { success: true };
+    } catch (e) {
+      console.error("Name registration error:", e);
+      return fail(500, { message: "Failed to register name" });
+    }
+  },
 } satisfies Actions;

@@ -584,6 +584,8 @@
             playedWords,
             duration: (Date.now() - startTime) / 1000,
             gameId: currentGameId,
+            userId,
+            username,
           }),
         );
 
@@ -633,17 +635,12 @@
         fd.append(
           "json",
           JSON.stringify({
-            score: gameStats!.score,
-            keyLog,
-            playedWords,
-            duration: (Date.now() - startTime) / 1000,
-            gameId: currentGameId || "retry-reg",
             userId,
             username: newName,
           }),
         );
 
-        const response = await fetch("?/submitScore", {
+        const response = await fetch("?/registerName", {
           method: "POST",
           body: fd,
         });
