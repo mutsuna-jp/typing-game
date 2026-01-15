@@ -840,34 +840,22 @@
       if (lastChar === targetToken) {
         // 一致! 即座に処理
         autoConfirmed = true;
-        isComposing = false;
         compositionText = "";
         composingText = "";
 
         Game.processFlickInput(lastChar);
 
-        // IMEの変換をキャンセルして入力をクリア
+        // 入力をクリア
         const target = e.target as HTMLInputElement;
         if (target) {
           target.value = "";
-          // IMEをリセット
-          target.blur();
-          setTimeout(() => target.focus(), 0);
         }
       }
     }
   }
 
   function handleCompositionEnd(e: CompositionEvent) {
-    if (!isPlaying) {
-      isComposing = false;
-      compositionText = "";
-      composingText = "";
-      autoConfirmed = false;
-      return;
-    }
-
-    // 自動確定済みの場合は何もしない
+    // 自動確定済みの場合は何もしない(最優先チェック)
     if (autoConfirmed) {
       autoConfirmed = false;
       isComposing = false;
@@ -875,6 +863,13 @@
       composingText = "";
       const target = e.target as HTMLInputElement;
       if (target) target.value = "";
+      return;
+    }
+
+    if (!isPlaying) {
+      isComposing = false;
+      compositionText = "";
+      composingText = "";
       return;
     }
 
