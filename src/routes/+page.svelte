@@ -9,8 +9,15 @@
   let username = "";
   let isSubmittingRanking = false;
   let isRankingSubmitted = false;
-  let showTransferModal = false;
   let transferInput = "";
+  let showProfileModal = false;
+  type HistoryEntry = {
+    score: number;
+    kpm: number;
+    accuracy: string | number;
+    date: string;
+  };
+  let scoreHistory: HistoryEntry[] = [];
 
   // Type aliases
   type Word = { disp: string; kana: string };
@@ -123,6 +130,7 @@
   };
 
   import { base } from "$app/paths";
+  import { replaceState } from "$app/navigation";
   import WordDisplay from "$lib/components/WordDisplay.svelte";
   import GameReport from "$lib/components/GameReport.svelte";
 
@@ -569,6 +577,19 @@
       } else {
         message = "✓ FINISHED (CUSTOM LIST - OFFLINE)";
       }
+
+      // Save to local history
+      this.saveToLocalHistory({
+        score,
+        accuracy,
+        kpm,
+        date: new Date().toISOString(),
+      });
+    },
+
+    saveToLocalHistory(entry: HistoryEntry) {
+      scoreHistory = [entry, ...scoreHistory].slice(0, 50); // Keep last 50
+      localStorage.setItem("typing_game_history", JSON.stringify(scoreHistory));
     },
 
     async submitToServer(currentScore: number) {
@@ -693,6 +714,14 @@
     // Load or generate user_id
     userId = localStorage.getItem("typing_game_user_id") || "";
     username = localStorage.getItem("typing_game_username") || "";
+    const savedHistory = localStorage.getItem("typing_game_history");
+    if (savedHistory) {
+      try {
+        scoreHistory = JSON.parse(savedHistory);
+      } catch (e) {
+        console.error("Failed to parse history:", e);
+      }
+    }
 
     if (!userId) {
       const chars =
@@ -709,7 +738,7 @@
     const url = new URL(window.location.href);
     if (!url.searchParams.has("userId")) {
       url.searchParams.set("userId", userId);
-      window.history.replaceState({}, "", url.toString());
+      replaceState(url.toString(), {});
     }
     clickHandler = () => {
       if (isPlaying) hiddenInputEl?.focus();
@@ -820,26 +849,25 @@
               KPM)
             </div>
           {/if}
-          <div
-            style="margin-top: 10px; display: flex; gap: 5px; justify-content: center;"
-          >
-            <a href="{base}/rankings" class="btn small subtle"
-              >VIEW ALL RANKINGS</a
-            >
+          <div class="ranking-actions">
             <button
               class="btn small subtle"
-              on:click={() => (showTransferModal = true)}>TRANSFER DATA</button
+              on:click={() => (showProfileModal = true)}
+              >PROFILE & HISTORY</button
+            >
+            <a href="{base}/rankings" class="btn small subtle"
+              >VIEW ALL RANKINGS</a
             >
           </div>
         </div>
       {/if}
 
-      {#if showTransferModal}
+      {#if showProfileModal}
         <div
           class="modal-backdrop"
           role="presentation"
-          on:click={() => (showTransferModal = false)}
-          on:keydown={(e) => e.key === "Escape" && (showTransferModal = false)}
+          on:click={() => (showProfileModal = false)}
+          on:keydown={(e) => e.key === "Escape" && (showProfileModal = false)}
         >
           <div
             class="modal"
@@ -849,42 +877,99 @@
             on:click|stopPropagation
             on:keydown|stopPropagation
           >
-            <h2>DATA TRANSFER</h2>
+            <h2 style="border-bottom: 2px solid white; padding-bottom: 5px;">
+              PROFILE & HISTORY
+            </h2>
             <div class="modal-body">
-              <p style="font-size: 0.8rem; color: oklch(75% 0 0);">
-                CAUTION: KEEP THIS ID SECRET. DO NOT SHARE.
-              </p>
-              <div class="transfer-box">
-                <div class="box-label">YOUR TRANSFER ID:</div>
-                <div class="id-display">{userId}</div>
-                <button
-                  class="btn small"
-                  on:click={() => navigator.clipboard.writeText(userId)}
-                  >COPY ID</button
-                >
+              <!-- Name Change Section -->
+              <div class="setting-section">
+                <div class="box-label">USER NAME:</div>
+                <div class="input-group">
+                  <input
+                    type="text"
+                    maxlength="20"
+                    bind:value={username}
+                    placeholder="guest"
+                    on:change={() => {
+                      localStorage.setItem("typing_game_username", username);
+                      Game.registerRanking(username);
+                    }}
+                  />
+                  <div class="save-hint">AUTO-SAVES TO RANKING</div>
+                </div>
               </div>
+
+              <!-- History Section -->
+              <div class="history-section">
+                <div class="box-label">RECENT HISTORY:</div>
+                <div class="history-list">
+                  {#if scoreHistory.length === 0}
+                    <div class="no-history">NO GAMES PLAYED YET</div>
+                  {:else}
+                    <table class="history-table">
+                      <thead>
+                        <tr>
+                          <th>DATE</th>
+                          <th>SCORE</th>
+                          <th>KPM</th>
+                          <th>ACC</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {#each scoreHistory as entry}
+                          <tr>
+                            <td>{new Date(entry.date).toLocaleDateString()}</td>
+                            <td style="color: oklch(85% 0.2 90)"
+                              >{entry.score}</td
+                            >
+                            <td>{entry.kpm}</td>
+                            <td>{entry.accuracy}%</td>
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  {/if}
+                </div>
+              </div>
+
               <hr
                 style="border: 0; border-top: 1px dashed oklch(45% 0 250); margin: 20px 0;"
               />
-              <div class="import-box">
-                <div class="box-label">IMPORT TRANSFER ID:</div>
-                <input
-                  type="text"
-                  bind:value={transferInput}
-                  placeholder="usr_..."
-                  style="width: 100%; margin-bottom: 10px;"
-                />
-                <button
-                  class="btn small"
-                  on:click={() => Game.importTransferId()}
-                  >IMPORT & RELOAD</button
+
+              <!-- Transfer Section (Hidden by default to keep it clean) -->
+              <details class="transfer-details">
+                <summary
+                  >DATA TRANSFER (ID: {userId.substring(0, 8)}...)</summary
                 >
-              </div>
+                <div class="transfer-box">
+                  <div class="box-label">YOUR TRANSFER ID:</div>
+                  <div class="id-display">{userId}</div>
+                  <button
+                    class="btn small"
+                    on:click={() => navigator.clipboard.writeText(userId)}
+                    >COPY ID</button
+                  >
+                </div>
+                <div class="import-box">
+                  <div class="box-label">IMPORT TRANSFER ID:</div>
+                  <input
+                    type="text"
+                    bind:value={transferInput}
+                    placeholder="usr_..."
+                    style="width: 100%; margin-bottom: 10px;"
+                  />
+                  <button
+                    class="btn small"
+                    on:click={() => Game.importTransferId()}
+                    >IMPORT & RELOAD</button
+                  >
+                </div>
+              </details>
             </div>
             <div class="modal-actions">
               <button
                 class="btn small subtle"
-                on:click={() => (showTransferModal = false)}>CLOSE</button
+                on:click={() => (showProfileModal = false)}>CLOSE</button
               >
             </div>
           </div>
@@ -1003,6 +1088,7 @@
     position: relative;
     width: 100vw;
     height: 100vh;
+    height: 100dvh;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -1229,6 +1315,15 @@
     border-style: dashed;
     margin-bottom: 20px;
   }
+
+  #controls-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+  }
+
   #file-status {
     font-size: 1rem;
     color: oklch(80% 0.2 160);
@@ -1403,21 +1498,188 @@
     box-shadow: none;
   }
 
+  /* --- Profile Modal Styles --- */
+  .setting-section,
+  .history-section {
+    margin-bottom: 20px;
+    text-align: left;
+  }
+  .input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .save-hint {
+    font-size: 0.6rem;
+    color: oklch(50% 0.1 150);
+    letter-spacing: 1px;
+  }
+  .history-list {
+    margin-top: 10px;
+    background: oklch(10% 0 0 / 0.5);
+    border: 1px solid oklch(25% 0 250);
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+  }
+  .history-table th {
+    font-size: 0.6rem;
+    padding: 5px;
+    text-align: left;
+    border-bottom: 1px solid oklch(45% 0 250);
+    color: oklch(45% 0 250);
+  }
+  .history-table td {
+    padding: 5px;
+    border-bottom: 1px dashed oklch(20% 0 250);
+  }
+  .no-history {
+    padding: 20px;
+    font-size: 0.8rem;
+    color: oklch(35% 0 250);
+    text-align: center;
+  }
+  .transfer-details {
+    font-size: 0.8rem;
+    color: oklch(45% 0 250);
+  }
+  .transfer-details summary {
+    cursor: pointer;
+    padding: 5px 0;
+    transition: color 0.2s;
+  }
+  .transfer-details summary:hover {
+    color: white;
+  }
+  .ranking-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 5px;
+    justify-content: center;
+  }
+
   @media (max-width: 600px) {
-    h1 {
-      font-size: 2rem;
+    #tv-set {
+      align-items: flex-start;
+      padding: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
     }
-    .info-bar {
-      font-size: 1rem;
-    }
-    .info-bar {
-      width: 95%;
-    }
+
     #screen {
       width: 100%;
-      height: 60vh;
+      height: auto;
+      min-height: 100vh;
+      min-height: 100dvh;
+      max-width: none;
+      max-height: none;
       border: none;
       border-radius: 0;
+      transform: none;
+      box-shadow: none;
+    }
+
+    #screen-content {
+      padding: 15px;
+      min-height: 100vh;
+      min-height: 100dvh;
+      justify-content: flex-start;
+      padding-top: 20px;
+      padding-bottom: 60vh; /* キーボード表示時のスペース確保 */
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      letter-spacing: 3px;
+      margin-bottom: 15px;
+    }
+
+    .info-bar {
+      font-size: 1rem;
+      width: 100%;
+      padding: 8px 0;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    #score-display-container,
+    #time-display-container {
+      flex: 1 1 45%;
+      min-width: 120px;
+    }
+
+    #score-rule {
+      font-size: 0.65rem;
+      width: 100%;
+    }
+
+    .btn {
+      padding: 12px 30px;
+      font-size: 1.2rem;
+      margin-top: 5px;
+      margin-bottom: 5px;
+      width: auto;
+      min-width: 200px;
+    }
+
+    .btn.small {
+      padding: 8px 15px;
+      font-size: 0.85rem;
+      min-width: auto;
+    }
+
+    .file-btn {
+      font-size: 1rem;
+      padding: 10px 25px;
+      margin-bottom: 5px;
+      margin-top: 5px;
+      min-width: 200px;
+    }
+
+    #controls-container {
+      gap: 5px;
+      margin-top: 10px;
+    }
+
+    #message {
+      font-size: 1.2rem;
+      margin-top: 8px;
+    }
+
+    .ranking-preview {
+      width: 95%;
+      padding: 8px;
+      margin-top: 15px;
+    }
+
+    .rank-list {
+      font-size: 0.9rem;
+    }
+
+    .modal {
+      max-width: 95%;
+      padding: 15px;
+      max-height: 80vh;
+    }
+
+    .modal h2 {
+      font-size: 1.3rem;
+    }
+
+    /* タッチ操作の改善 */
+    .btn,
+    button,
+    label {
+      -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);
+    }
+
+    /* スクロール時のパフォーマンス改善 */
+    #tv-set {
+      -webkit-overflow-scrolling: touch;
     }
   }
 </style>

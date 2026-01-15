@@ -255,4 +255,50 @@
   .rank-D {
     color: oklch(75% 0 0);
   }
+
+  @media (max-width: 600px) {
+    .report-header {
+      font-size: 1.2rem;
+      width: 80%;
+    }
+
+    .stat-grid {
+      width: 90%;
+    }
+
+    .stat-row {
+      font-size: 1rem;
+    }
+
+    .rank-display {
+      font-size: 3rem;
+      margin: 10px 0;
+    }
+
+    .ranking-box {
+      width: 95%;
+      padding: 8px;
+    }
+
+    .box-title {
+      font-size: 0.7rem;
+    }
+
+    input,
+    .reg-btn {
+      font-size: 0.9rem;
+      padding: 8px 12px;
+    }
+
+    .nav-links {
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+      margin-top: 15px;
+    }
+
+    .nav-link {
+      font-size: 0.9rem;
+    }
+  }
 </style>

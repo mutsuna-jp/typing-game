@@ -130,12 +130,24 @@
   }
 
   @media (max-width: 600px) {
-    .kanji-display,
-    .word-display {
-      font-size: 2rem;
+    .word-container {
+      min-height: 150px;
+      margin: 5px 0;
     }
+
+    .kanji-display {
+      font-size: 1.8rem;
+      margin-bottom: 3px;
+    }
+
+    .word-display {
+      font-size: 2.2rem;
+    }
+
     .romaji-display {
       font-size: 1rem;
+      margin-top: 5px;
+      letter-spacing: 1px;
     }
   }
 </style>
