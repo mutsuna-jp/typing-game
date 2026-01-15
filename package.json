@@ -4,7 +4,8 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev",
+		"dev": "vite dev --host 127.0.0.1",
+		"dev:all": "start http://127.0.0.1:8788/typing-game/ && wrangler pages dev --d1 DB=typing-game-db --local --proxy 5173 -- pnpm dev",
 		"build": "vite build",
 		"preview": "wrangler dev .svelte-kit/cloudflare/_worker.js --port 4173",
 		"prepare": "pnpm run types && svelte-kit sync || echo ''",

@@ -14,6 +14,7 @@
   export let isSubmitting: boolean = false;
   export let isSubmitted: boolean = false;
 
+  import { base } from "$app/paths";
   const dispatch = createEventDispatcher();
 
   let inputName = currentUsername || "";
@@ -98,8 +99,8 @@
   {/if}
 
   <div class="nav-links">
-    <a href="/typing-game" class="nav-link">BACK TO TOP</a>
-    <a href="/typing-game/rankings" class="nav-link">VIEW RANKINGS</a>
+    <a href="{base}/" class="nav-link">BACK TO TOP</a>
+    <a href="{base}/rankings" class="nav-link">VIEW RANKINGS</a>
   </div>
 </div>
 

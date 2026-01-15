@@ -86,7 +86,7 @@
       freq: number,
       type: OscillatorType | string,
       duration: number,
-      vol: number,
+      vol: number
     ) {
       if (!this.ctx) return;
       const osc = this.ctx.createOscillator();
@@ -96,7 +96,7 @@
       gain.gain.setValueAtTime(vol, this.ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(
         0.01,
-        this.ctx.currentTime + duration,
+        this.ctx.currentTime + duration
       );
       osc.connect(gain);
       gain.connect(this.ctx.destination);
@@ -226,7 +226,7 @@
         const word = getNextWordSeeded(
           this.activeList,
           elapsedTime,
-          this.gamePRNG,
+          this.gamePRNG
         );
         return { ...word, tokens: KanaEngine.tokenize(word.kana) };
       }
@@ -333,10 +333,15 @@
       this.resetState();
 
       try {
-        const res = await fetch("?/getGameToken", {
-          method: "POST",
-          body: new FormData(),
-        });
+        const fd = new FormData();
+        fd.set("_action", "getGameToken");
+        const res = await fetch(
+          window.location.pathname + window.location.search,
+          {
+            method: "POST",
+            body: fd,
+          }
+        );
         if (!res.ok) throw new Error(`Token request failed: ${res.status}`);
 
         // Expect a simple JSON object: { success: true, gameId, seed }
@@ -366,7 +371,7 @@
             // Fallback: pick an object with numeric seed, or reconstruct
             const obj = gameObj.find(
               (el: any) =>
-                el && typeof el === "object" && typeof el.seed === "number",
+                el && typeof el === "object" && typeof el.seed === "number"
             );
             if (obj) {
               // If the object contains a numeric small 'gameId' (legacy), prefer string id if available
@@ -375,7 +380,7 @@
             } else {
               if (numSeed !== undefined) {
                 const possibleGameId = gameObj.find(
-                  (el: any) => typeof el === "string" || typeof el === "number",
+                  (el: any) => typeof el === "string" || typeof el === "number"
                 );
                 gameObj = {
                   gameId:
@@ -582,7 +587,7 @@
             playedWords,
             duration: (Date.now() - startTime) / 1000,
             gameId: currentGameId,
-          }),
+          })
         );
 
         const response = await fetch("?/submitScore", {
@@ -638,7 +643,7 @@
             gameId: currentGameId || "retry-reg",
             userId,
             username: newName,
-          }),
+          })
         );
 
         const response = await fetch("?/submitScore", {
@@ -675,13 +680,13 @@
         transferInput.length !== 64
       ) {
         alert(
-          "Invalid Transfer ID. Must start with 'usr_' and be 64 characters.",
+          "Invalid Transfer ID. Must start with 'usr_' and be 64 characters."
         );
         return;
       }
       if (
         confirm(
-          "Importing this ID will overwrite your current progress. Continue?",
+          "Importing this ID will overwrite your current progress. Continue?"
         )
       ) {
         localStorage.setItem("typing_game_user_id", transferInput);
@@ -785,7 +790,7 @@
 
       <div id="score-rule">
         SCORE = (LEN x {CONFIG.BASE_SCORE_PER_CHAR}) x (1 + COMBO x {Math.round(
-          CONFIG.COMBO_MULTIPLIER * 100,
+          CONFIG.COMBO_MULTIPLIER * 100
         )}%) + [PERFECT: {CONFIG.PERFECT_SCORE_BONUS}]
       </div>
 
