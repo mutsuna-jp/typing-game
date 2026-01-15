@@ -842,26 +842,40 @@
     const inputText = e.data || "";
     compositionText = inputText;
 
-    // 特殊文字のみcomposingTextに表示
-    if (currentWord && tokenIndex < currentWord.tokens.length) {
-      const targetToken = currentWord.tokens[tokenIndex];
+    if (!currentWord || tokenIndex >= currentWord.tokens.length) {
+      composingText = "";
+      return;
+    }
 
-      // 目標が特殊文字の場合のみ表示
-      if (isSpecialChar(targetToken)) {
-        composingText = inputText;
+    const targetToken = currentWord.tokens[tokenIndex];
+    const isSpecial = isSpecialChar(targetToken);
 
-        // 一致したら即座に処理
-        if (inputText === targetToken || inputText.endsWith(targetToken)) {
-          Game.processFlickInput(targetToken);
-          composingText = "";
-          compositionText = "";
+    // 特殊文字の場合のみcomposingTextに表示
+    if (isSpecial) {
+      composingText = inputText;
+    } else {
+      composingText = "";
+    }
 
-          const target = e.target as HTMLInputElement;
-          if (target) target.value = "";
-        }
-      } else {
-        // 基本文字の場合は表示しない(inputイベントで処理)
+    // 一致判定
+    if (inputText === targetToken || inputText.endsWith(targetToken)) {
+      // 一致! 即座に処理
+      Game.processFlickInput(targetToken);
+      composingText = "";
+      compositionText = "";
+
+      const target = e.target as HTMLInputElement;
+      if (target) target.value = "";
+    } else if (!isSpecial && inputText.length > 0) {
+      // 基本文字で不一致の場合、1文字入力された時点でミス判定
+      const inputChar = inputText.slice(-1);
+      if (inputChar !== targetToken) {
+        Game.inputError();
         composingText = "";
+        compositionText = "";
+
+        const target = e.target as HTMLInputElement;
+        if (target) target.value = "";
       }
     }
   }
@@ -903,30 +917,11 @@
 
     if (val.length > 0) {
       if (inputMode === "flick") {
-        // フリック入力モード
-        if (isComposing) {
-          // IME変換中は何もしない(compositionupdateで処理)
-          return;
+        // フリック入力はcompositionイベントで処理
+        // ここでは入力をクリアするのみ
+        if (!isComposing) {
+          target.value = "";
         }
-
-        // 変換なしで確定された文字(基本文字)を処理
-        const hiragana = val.slice(-1);
-
-        if (currentWord && tokenIndex < currentWord.tokens.length) {
-          const targetToken = currentWord.tokens[tokenIndex];
-
-          // 基本文字の場合は即座に判定
-          if (!isSpecialChar(targetToken)) {
-            if (hiragana === targetToken) {
-              Game.processFlickInput(hiragana);
-            } else {
-              Game.inputError();
-            }
-          }
-          // 特殊文字の場合はcompositionイベントで処理済み
-        }
-
-        target.value = "";
       } else {
         // 半角入力モード: 従来通りの処理
         const char = val.slice(-1).toLowerCase();
