@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  export let data: { words?: Word[]; errors?: string[]; count?: number } = {};
 
   // Type aliases
   type KanaTable = Record<string, string[]>;
@@ -115,217 +116,7 @@
     },
   };
 
-  /**
-   * Kana Engine
-   * (unchanged) ...
-   */
-  // keep the existing KanaEngine implementation
-  const KanaEngine: {
-    table: KanaTable;
-    tokenize(kanaWord: string): string[];
-    getValidPatterns(token: string, nextToken?: string): string[];
-  } = {
-    table: (function () {
-      // reconstruct the same table inline to preserve behavior
-      return {
-        あ: ["a"],
-        い: ["i", "yi"],
-        う: ["u", "wu", "whu"],
-        え: ["e"],
-        お: ["o"],
-        か: ["ka", "ca"],
-        き: ["ki"],
-        く: ["ku", "cu", "qu"],
-        け: ["ke"],
-        こ: ["ko", "co"],
-        さ: ["sa"],
-        し: ["shi", "si", "ci"],
-        す: ["su"],
-        せ: ["se", "ce"],
-        そ: ["so"],
-        た: ["ta"],
-        ち: ["chi", "ti"],
-        つ: ["tsu", "tu"],
-        て: ["te"],
-        と: ["to"],
-        な: ["na"],
-        に: ["ni"],
-        ぬ: ["nu"],
-        ね: ["ne"],
-        の: ["no"],
-        は: ["ha"],
-        ひ: ["hi"],
-        ふ: ["fu", "hu"],
-        へ: ["he"],
-        ほ: ["ho"],
-        ま: ["ma"],
-        み: ["mi"],
-        む: ["mu"],
-        め: ["me"],
-        も: ["mo"],
-        や: ["ya"],
-        ゆ: ["yu"],
-        よ: ["yo"],
-        ら: ["ra"],
-        り: ["ri"],
-        る: ["ru"],
-        れ: ["re"],
-        ろ: ["ro"],
-        わ: ["wa"],
-        を: ["wo"],
-        ん: ["nn", "xn", "n"],
-        が: ["ga"],
-        ぎ: ["gi"],
-        ぐ: ["gu"],
-        げ: ["ge"],
-        ご: ["go"],
-        ざ: ["za"],
-        じ: ["ji", "zi"],
-        ず: ["zu"],
-        ぜ: ["ze"],
-        ぞ: ["zo"],
-        だ: ["da"],
-        ぢ: ["ji", "di"],
-        づ: ["zu", "du"],
-        で: ["de"],
-        ど: ["do"],
-        ば: ["ba"],
-        び: ["bi"],
-        ぶ: ["bu"],
-        べ: ["be"],
-        ぼ: ["bo"],
-        ぱ: ["pa"],
-        ぴ: ["pi"],
-        ぷ: ["pu"],
-        ぺ: ["pe"],
-        ぽ: ["po"],
-        ぁ: ["xa", "la"],
-        ぃ: ["xi", "li"],
-        ぅ: ["xu", "lu"],
-        ぇ: ["xe", "le"],
-        ぉ: ["xo", "lo"],
-        っ: ["xtu", "ltu", "tsu"],
-        ゃ: ["xya", "lya"],
-        ゅ: ["xyu", "lyu"],
-        ょ: ["xyo", "lyo"],
-        ゎ: ["xwa", "lwa"],
-        きゃ: ["kya", "kixya"],
-        きゅ: ["kyu", "kixyu"],
-        きょ: ["kyo", "kixyo"],
-        しゃ: ["sha", "sya"],
-        しゅ: ["shu", "syu"],
-        しょ: ["sho", "syo"],
-        ちゃ: ["cha", "tya"],
-        ちゅ: ["chu", "tyu"],
-        ちょ: ["cho", "tyo"],
-        にゃ: ["nya"],
-        にゅ: ["nyu"],
-        にょ: ["nyo"],
-        ひゃ: ["hya"],
-        ひゅ: ["hyu"],
-        ひょ: ["hyo"],
-        みゃ: ["mya"],
-        みゅ: ["myu"],
-        みょ: ["myo"],
-        りゃ: ["rya"],
-        りゅ: ["ryu"],
-        りょ: ["ryo"],
-        ぎゃ: ["gya"],
-        ぎゅ: ["gyu"],
-        ぎょ: ["gyo"],
-        じゃ: ["ja", "jya", "zya"],
-        じゅ: ["ju", "jyu", "zyu"],
-        じょ: ["jo", "jyo", "zyo"],
-        びゃ: ["bya"],
-        びゅ: ["byu"],
-        びょ: ["byo"],
-        ぴゃ: ["pya"],
-        ぴゅ: ["pyu"],
-        ぴょ: ["pyo"],
-        いェ: ["ye"],
-        うぁ: ["wha"],
-        うぃ: ["wi", "whi"],
-        うぇ: ["we", "whe"],
-        うぉ: ["who"],
-        ヴ: ["vu"],
-        ゔ: ["vu"],
-        ゔぁ: ["va"],
-        ゔぃ: ["vi"],
-        ゔぇ: ["ve"],
-        ゔぉ: ["vo"],
-        くぁ: ["qa", "qwa", "kwa"],
-        ぐぁ: ["gwa"],
-        しェ: ["she", "sye"],
-        じェ: ["je", "jye"],
-        ちェ: ["che", "tye"],
-        つぁ: ["tsa"],
-        つぃ: ["tsi"],
-        つぇ: ["tse"],
-        つぉ: ["tso"],
-        てぃ: ["thi"],
-        てゅ: ["thu"],
-        でぃ: ["dhi"],
-        でゅ: ["dhu"],
-        とぅ: ["twu", "toxu"],
-        どぅ: ["dwu", "doxu"],
-        ふぁ: ["fa"],
-        ふぃ: ["fi"],
-        ふぇ: ["fe"],
-        ふぉ: ["fo"],
-        ふゅ: ["fyu"],
-      };
-    })(),
-
-    // Tokenize a hiragana string into actionable typing units (e.g. \"sha\", \"ka\")
-    tokenize(kanaWord: string) {
-      let tokens: string[] = [];
-      for (let i = 0; i < kanaWord.length; i++) {
-        let char = kanaWord[i];
-        let next = kanaWord[i + 1];
-        // Check for compound kana (small ya, yu, yo, a, i, u, e, o, wa)
-        // 'ゎ' (small wa) added for 'kwa' etc.
-        if (
-          next &&
-          ["ゃ", "ゅ", "ょ", "ぁ", "ぃ", "ぅ", "ぇ", "ぉ", "ゎ"].includes(next)
-        ) {
-          tokens.push(char + next);
-          i++;
-        } else {
-          tokens.push(char);
-        }
-      }
-      return tokens;
-    },
-
-    // Get all valid romanization patterns for a token, considering the next token
-    getValidPatterns(token: string, nextToken?: string) {
-      let patterns: string[] = [...(this.table[token] || [])];
-
-      // Allow split input for compounds (e.g., 's' + 'ya' for 'sya')
-      if (token.length === 2 && token.charAt(0) !== "っ") {
-        const char1 = token.charAt(0);
-        const char2 = token.charAt(1);
-        const p1List = this.table[char1] || [];
-        const p2List = this.table[char2] || [];
-        for (const p1 of p1List) {
-          for (const p2 of p2List) patterns.push(p1 + p2);
-        }
-      }
-
-      // Handle 'っ' (Small tsu) - Allow doubling the next consonant
-      if (token === "っ" && nextToken) {
-        const nextBasicPatterns = this.table[nextToken] || [];
-        if (nextBasicPatterns.length > 0) {
-          const consonants = new Set<string>();
-          for (const p of nextBasicPatterns) {
-            if (p.length > 0) consonants.add(p[0]);
-          }
-          patterns = [...consonants, ...patterns];
-        }
-      }
-      return patterns;
-    },
-  };
+  import { KanaEngine, parseWords } from "$lib/word-utils";
   /**
    * Word Manager
    * Handles word list storage, CSV loading, and difficulty scaling logic.
@@ -334,7 +125,7 @@
     rawList: Word[];
     activeList: Word[];
     lastErrors: string[];
-    init(): Promise<number>;
+    init(initialWords?: Word[]): Promise<number>;
     updateActiveList(): void;
     loadCSV(text: string): number;
     getNextWord(elapsedTime: number): Word & { tokens: string[] };
@@ -343,15 +134,29 @@
     activeList: [],
     lastErrors: [],
 
-    async init() {
-      // Try to load words from the static CSV file. If unavailable, fall back to built-in list.
+    async init(initialWords?: Word[]) {
+      // If server provided initialWords, use them (SSR preload). Otherwise try fetching static CSV.
+      if (initialWords && initialWords.length > 0) {
+        this.rawList = initialWords;
+        this.updateActiveList();
+        return initialWords.length;
+      }
+
+      // Try to load words from the static CSV file. If unavailable, fall back to empty list.
       try {
         const res = await fetch("/words.csv");
         if (res.ok) {
           const text = await res.text();
-          const count = this.loadCSV(text);
-          this.updateActiveList();
-          return count;
+          const { words, errors } = parseWords(text);
+          this.lastErrors = errors;
+          if (words.length > 0) {
+            this.rawList = words;
+            this.updateActiveList();
+            return words.length;
+          } else {
+            this.updateActiveList();
+            return 0;
+          }
         } else {
           this.updateActiveList();
           return 0;
@@ -367,61 +172,15 @@
       this.activeList = this.rawList.filter((w) => !w.kana.includes("ー"));
     },
 
-    // Parse CSV text and update list (stronger validation)
+    // Parse CSV text and update list (delegates to shared parser)
     loadCSV(text: string) {
-      this.lastErrors = [];
-      const lines = text.split(/\r\n|\n/);
-      const newWords: Word[] = [];
-      for (let i = 0; i < lines.length; i++) {
-        const raw = lines[i];
-        const lineNo = i + 1;
-        if (!raw.trim()) continue;
-        const parts = raw.split(",");
-
-        // Allow and skip a header row if it appears to be ASCII labels
-        if (
-          i === 0 &&
-          parts.length >= 2 &&
-          /[A-Za-z]/.test(parts[0]) &&
-          /[A-Za-z]/.test(parts[1])
-        ) {
-          continue; // skip header
-        }
-
-        if (parts.length < 2) {
-          this.lastErrors.push(`Line ${lineNo}: missing columns`);
-          continue;
-        }
-
-        const disp = parts[0].trim();
-        const kana = parts[1].trim();
-        if (!disp || !kana) {
-          this.lastErrors.push(`Line ${lineNo}: empty display or kana`);
-          continue;
-        }
-
-        // Validate kana tokens are recognized by KanaEngine
-        const tokens = KanaEngine.tokenize(kana);
-        let valid = true;
-        for (const t of tokens) {
-          if (!KanaEngine.table[t]) {
-            valid = false;
-            break;
-          }
-        }
-        if (!valid) {
-          this.lastErrors.push(`Line ${lineNo}: invalid kana '${kana}'`);
-          continue;
-        }
-
-        newWords.push({ disp, kana });
-      }
-
-      if (newWords.length > 0) {
-        this.rawList = newWords;
+      const { words, errors } = parseWords(text);
+      this.lastErrors = errors;
+      if (words.length > 0) {
+        this.rawList = words;
         this.updateActiveList();
       }
-      return newWords.length;
+      return words.length;
     },
 
     // Select a word based on difficulty (elapsed time)
@@ -698,23 +457,31 @@
 
       UIManager.init();
 
-      // Try to load CSV words from static file
-      const count = await WordManager.init();
-      const errCount = WordManager.lastErrors.length;
+      // Try to initialize words from server-provided data or static CSV
+      const count = await WordManager.init(data?.words);
+      const serverErrCount = data?.errors?.length || 0;
+      const errCount = WordManager.lastErrors.length || serverErrCount;
       if (count > 0) {
         UIManager.showFileStatus(
           `FILE LOADED: ${count} WORDS${errCount ? ` (${errCount} ERRORS)` : ""}`,
           errCount > 0
         );
-        if (errCount > 0)
+        if (WordManager.lastErrors.length > 0)
           UIManager.updateMessage(
             WordManager.lastErrors.slice(0, 3).join("  ")
           );
+        else if (serverErrCount > 0)
+          UIManager.updateMessage(data!.errors!.slice(0, 3).join("  "));
       } else {
         UIManager.showFileStatus("NO WORDS LOADED", true);
         if (errCount > 0)
           UIManager.updateMessage(
-            WordManager.lastErrors.slice(0, 3).join("  ")
+            (WordManager.lastErrors.length > 0
+              ? WordManager.lastErrors
+              : data?.errors || []
+            )
+              .slice(0, 3)
+              .join("  ")
           );
         else UIManager.updateMessage("LOAD CSV TO START");
       }
