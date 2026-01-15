@@ -490,6 +490,10 @@
         AudioEngine.playType();
 
         tokenIndex++;
+
+        // composingTextをクリア(UI表示の残留を防ぐ)
+        composingText = "";
+
         if (tokenIndex >= tokens.length) this.wordComplete();
       } else {
         // 不正解
@@ -827,6 +831,12 @@
     }
 
     const inputText = e.data || "";
+
+    // 前回の自動確定後、新しい入力が始まった場合はフラグをリセット
+    if (autoConfirmed && inputText) {
+      autoConfirmed = false;
+    }
+
     compositionText = inputText;
     composingText = inputText; // UI表示用
 
