@@ -830,6 +830,24 @@
     composingText = "";
   }
 
+  // IME を確定させて、入力フィールドと composingText をリセット
+  function clearComposingState(target: HTMLInputElement | null) {
+    isComposing = false;
+    composingText = "";
+
+    if (target) {
+      // 入力フィールドをクリア
+      target.value = "";
+      // compositionend イベントを手動で発火させて IME に確定させる
+      const endEvent = new CompositionEvent("compositionend", {
+        bubbles: true,
+        cancelable: true,
+        data: "",
+      });
+      target.dispatchEvent(endEvent);
+    }
+  }
+
   function handleCompositionUpdate(e: CompositionEvent) {
     if (!isPlaying || inputMode !== "flick") {
       composingText = e.data || "";
@@ -849,34 +867,28 @@
     // 入力を常に表示（特殊文字か基本文字かに関わらず）
     composingText = inputText;
 
+    const target = e.target as HTMLInputElement;
+
     // 一致判定
     if (inputText === targetToken || inputText.endsWith(targetToken)) {
       // 一致! 即座に処理
       Game.processFlickInput(targetToken);
-      composingText = "";
-
-      const target = e.target as HTMLInputElement;
-      if (target) target.value = "";
+      clearComposingState(target);
     } else if (!isSpecial && inputText.length > 0) {
       // 基本文字で不一致の場合、1文字入力された時点でミス判定
       const inputChar = inputText.slice(-1);
       if (inputChar !== targetToken) {
         Game.inputError();
-        composingText = "";
-
-        const target = e.target as HTMLInputElement;
-        if (target) target.value = "";
+        clearComposingState(target);
       }
     }
   }
 
   function handleCompositionEnd(e: CompositionEvent) {
-    isComposing = false;
-    composingText = "";
+    const target = e.target as HTMLInputElement;
 
     if (!isPlaying || inputMode !== "flick") {
-      const target = e.target as HTMLInputElement;
-      if (target) target.value = "";
+      clearComposingState(target);
       return;
     }
 
@@ -894,8 +906,7 @@
       }
     }
 
-    const target = e.target as HTMLInputElement;
-    if (target) target.value = "";
+    clearComposingState(target);
   }
 
   function handleHiddenInput(e: Event) {
