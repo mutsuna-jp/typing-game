@@ -907,8 +907,9 @@
     if (val.length > 0) {
       if (inputMode === "flick") {
         // フリック入力はcompositionイベントで処理
-        // ここでは入力をクリアするのみ
+        // composition イベントが発火していない場合のクリア
         if (!isComposing) {
+          composingText = "";
           target.value = "";
         }
       } else {
@@ -917,6 +918,9 @@
         if (/^[a-z0-9\-]$/.test(char)) Game.processInput(char);
         target.value = "";
       }
+    } else if (inputMode === "flick" && isComposing === false) {
+      // フリック入力で val が空の場合は composingText もクリア
+      composingText = "";
     }
   }
 
