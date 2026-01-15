@@ -146,6 +146,7 @@
   let currentWord: (Word & { tokens: string[] }) | null = null;
   let tokenIndex = 0;
   let inputBuffer = "";
+  let composingText = ""; // フリック入力中の未確定文字
   let hasErrorInWord = false;
   let errorIndex: number | null = null;
   let gameStats: GameStats | null = null;
@@ -809,32 +810,94 @@
 
   let compositionText = "";
   let isComposing = false;
+  let autoConfirmed = false; // 自動確定したかどうかのフラグ
 
   function handleCompositionStart(e: CompositionEvent) {
     isComposing = true;
     compositionText = "";
+    composingText = ""; // UI表示用
+    autoConfirmed = false;
   }
 
   function handleCompositionUpdate(e: CompositionEvent) {
-    compositionText = e.data || "";
+    if (!isPlaying || inputMode !== "flick") {
+      compositionText = e.data || "";
+      composingText = e.data || "";
+      return;
+    }
+
+    const inputText = e.data || "";
+    compositionText = inputText;
+    composingText = inputText; // UI表示用
+
+    // 入力中の文字が目標の文字と一致したら即座に確定
+    if (inputText && currentWord && tokenIndex < currentWord.tokens.length) {
+      const targetToken = currentWord.tokens[tokenIndex];
+
+      // 入力中の最後の文字をチェック
+      const lastChar = inputText.slice(-1);
+
+      if (lastChar === targetToken) {
+        // 一致! 即座に処理
+        autoConfirmed = true;
+        isComposing = false;
+        compositionText = "";
+        composingText = "";
+
+        Game.processFlickInput(lastChar);
+
+        // IMEの変換をキャンセルして入力をクリア
+        const target = e.target as HTMLInputElement;
+        if (target) {
+          target.value = "";
+          // IMEをリセット
+          target.blur();
+          setTimeout(() => target.focus(), 0);
+        }
+      }
+    }
   }
 
   function handleCompositionEnd(e: CompositionEvent) {
     if (!isPlaying) {
       isComposing = false;
       compositionText = "";
+      composingText = "";
+      autoConfirmed = false;
+      return;
+    }
+
+    // 自動確定済みの場合は何もしない
+    if (autoConfirmed) {
+      autoConfirmed = false;
+      isComposing = false;
+      compositionText = "";
+      composingText = "";
+      const target = e.target as HTMLInputElement;
+      if (target) target.value = "";
       return;
     }
 
     const finalText = e.data || compositionText;
     isComposing = false;
     compositionText = "";
+    composingText = ""; // UI表示用クリア
 
     if (finalText && inputMode === "flick") {
-      // フリック入力: 確定した各ひらがなを処理
-      for (let i = 0; i < finalText.length; i++) {
-        const hiragana = finalText[i];
-        Game.processFlickInput(hiragana);
+      // エンターキーで確定された場合
+      // 最後の文字をチェックしてミス判定
+      const lastChar = finalText.slice(-1);
+
+      if (currentWord && tokenIndex < currentWord.tokens.length) {
+        const targetToken = currentWord.tokens[tokenIndex];
+
+        if (lastChar !== targetToken) {
+          // ミス判定
+          Game.inputError();
+        } else {
+          // 一致(念のため処理)
+          Game.processFlickInput(lastChar);
+        }
       }
     }
 
@@ -952,7 +1015,14 @@
           on:submit={(e: any) => Game.registerRanking(e.detail.username)}
         />
       {:else}
-        <WordDisplay {currentWord} {tokenIndex} {inputBuffer} {errorIndex} />
+        <WordDisplay
+          {currentWord}
+          {tokenIndex}
+          {inputBuffer}
+          {composingText}
+          {inputMode}
+          {errorIndex}
+        />
       {/if}
 
       {#if !isPlaying && !gameStats}

@@ -4,6 +4,8 @@
   export let currentWord: { disp: string; tokens: string[] } | null = null;
   export let tokenIndex: number = 0;
   export let inputBuffer: string = "";
+  export let composingText: string = ""; // フリック入力中の未確定文字
+  export let inputMode: "flick" | "halfwidth" = "flick";
   export let errorIndex: number | null = null;
 
   $: hint = (() => {
@@ -33,7 +35,13 @@
       {/each}
     </div>
     <div class="romaji-display">
-      {#if hint}
+      {#if inputMode === "flick"}
+        {#if composingText}
+          <span class="composing-text">{composingText}</span>
+        {:else if currentWord.tokens[tokenIndex]}
+          <span class="hint-text">{currentWord.tokens[tokenIndex]}</span>
+        {/if}
+      {:else if hint}
         <span class="input-buffer">{inputBuffer}</span>{hint.substring(
           inputBuffer.length,
         )}
@@ -82,6 +90,28 @@
 
   .input-buffer {
     color: oklch(35% 0.02 250);
+  }
+
+  .composing-text {
+    color: oklch(80% 0.15 60);
+    font-weight: bold;
+    text-shadow: 0 0 5px oklch(80% 0.15 60);
+    animation: pulse 0.8s ease-in-out infinite;
+  }
+
+  .hint-text {
+    color: oklch(50% 0.05 250);
+    opacity: 0.6;
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.6;
+    }
   }
 
   .char {
