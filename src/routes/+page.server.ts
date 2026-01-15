@@ -1,6 +1,6 @@
 import type { PageServerLoad } from "./$types";
 import { parseWords } from "$lib/word-utils";
-import { base } from '$app/paths';
+import { base } from "$app/paths";
 
 export const load = (async ({ fetch }) => {
   try {
