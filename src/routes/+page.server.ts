@@ -43,8 +43,6 @@ export const load = (async ({ platform, url }) => {
   }
 }) satisfies PageServerLoad;
 
-// --- Replay & Seed Management ---
-const pendingSessions = new Map<string, { expires: number; seed: number }>();
 const SESSION_TTL = 10 * 60 * 1000; // 10 minutes
 
 // Official words cached on server for validation
@@ -53,22 +51,39 @@ const OFFICIAL_WORDS = parseWords(wordsCsv).words.filter(
 );
 
 export const actions = {
-  getGameToken: async () => {
+  getGameToken: async ({ platform }) => {
+    const db = platform?.env?.DB;
+    if (!db) {
+      return fail(500, { message: "Database connection failed" });
+    }
+
     const id =
       Math.random().toString(36).substring(2) + Date.now().toString(36);
     const seed = Math.floor(Math.random() * 1000000);
-    pendingSessions.set(id, { expires: Date.now() + SESSION_TTL, seed });
+    const expires = Date.now() + SESSION_TTL;
 
-    // Cleanup old sessions
-    if (pendingSessions.size > 1000) {
-      const now = Date.now();
-      for (const [key, val] of pendingSessions) {
-        if (val.expires < now) pendingSessions.delete(key);
+    try {
+      // Insert new session
+      await db
+        .prepare(
+          "INSERT INTO game_sessions (id, seed, expires_at) VALUES (?, ?, ?)"
+        )
+        .bind(id, seed, expires)
+        .run();
+
+      // Periodically cleanup old sessions (10% chance to run cleanup on token request)
+      if (Math.random() < 0.1) {
+        await db
+          .prepare("DELETE FROM game_sessions WHERE expires_at < ?")
+          .bind(Date.now())
+          .run();
       }
-    }
 
-    // Return a plain serializable object expected by SvelteKit actions
-    return { success: true, gameId: id, seed };
+      return { success: true, gameId: id, seed };
+    } catch (e) {
+      console.error("D1 Session Error:", e);
+      return fail(500, { message: "Failed to create session" });
+    }
   },
 
   submitScore: async ({ request, platform }) => {
@@ -86,21 +101,34 @@ export const actions = {
       const { score, keyLog, playedWords, gameId, duration, userId, username } =
         data;
 
-      console.log(
-        `[SUBMIT] gameId=${gameId} pending=${pendingSessions.has(gameId)}`
-      );
+      const db = platform?.env?.DB;
+      if (!db) {
+        return fail(500, { message: "Database connection failed" });
+      }
+
+      console.log(`[SUBMIT] gameId=${gameId}`);
 
       // 1. Basic Validity & Session Check
-      if (!gameId || !pendingSessions.has(gameId)) {
+      if (!gameId) {
+        return fail(400, { message: "Missing session ID" });
+      }
+
+      // Fetch and delete session atomically-ish (one-time use)
+      const session = await db
+        .prepare("SELECT seed, expires_at FROM game_sessions WHERE id = ?")
+        .bind(gameId)
+        .first<{ seed: number; expires_at: number }>();
+
+      if (!session) {
         return fail(400, {
           message: "Invalid or expired session. Please refresh.",
         });
       }
 
-      const session = pendingSessions.get(gameId)!;
-      pendingSessions.delete(gameId); // Consume immediately
+      // Delete the session token so it can't be reused
+      await db.prepare("DELETE FROM game_sessions WHERE id = ?").bind(gameId).run();
 
-      if (Date.now() > session.expires) {
+      if (Date.now() > session.expires_at) {
         return fail(400, { message: "Session expired" });
       }
 
@@ -261,7 +289,7 @@ export const actions = {
 
       // --- 5. D1 Integration: Save if Personal Best ---
       let isNewRecord = false;
-      const db = platform?.env?.DB;
+
 
       if (db && userId && userId.startsWith("usr_")) {
         // Use guest if username is empty
