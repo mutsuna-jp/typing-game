@@ -2,6 +2,60 @@
 export type KanaTable = Record<string, string[]>;
 export type Word = { disp: string; kana: string };
 
+export const GAME_CONFIG = {
+  BASE_SCORE_PER_CHAR: 5,
+  COMBO_MULTIPLIER: 0.05,
+  PERFECT_SCORE_BONUS: 20,
+  DEFAULT_TIME: 60,
+};
+
+/**
+ * Simple predictable PRNG (Mulberry32)
+ */
+export function createPRNG(seed: number) {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Difficulty-based word selection logic (Shared)
+ */
+export function getNextWordSeeded(
+  activeList: Word[],
+  elapsedTime: number,
+  prng: () => number,
+) {
+  const DIFFICULTY_THRESHOLDS = [20, 40, 60];
+  const WORD_LENGTHS = {
+    LEVEL1: { min: 1, max: 3 },
+    LEVEL2: { min: 3, max: 5 },
+    LEVEL3: { min: 4, max: 6 },
+    LEVEL4: { min: 5, max: 20 },
+  };
+
+  let min: number, max: number;
+  if (elapsedTime < DIFFICULTY_THRESHOLDS[0])
+    ({ min, max } = WORD_LENGTHS.LEVEL1);
+  else if (elapsedTime < DIFFICULTY_THRESHOLDS[1])
+    ({ min, max } = WORD_LENGTHS.LEVEL2);
+  else if (elapsedTime < DIFFICULTY_THRESHOLDS[2])
+    ({ min, max } = WORD_LENGTHS.LEVEL3);
+  else ({ min, max } = WORD_LENGTHS.LEVEL4);
+
+  let candidates = activeList.filter(
+    (w) => w.kana.length >= min && w.kana.length <= max,
+  );
+  if (candidates.length === 0) candidates = activeList;
+  if (candidates.length === 0)
+    return { disp: "NO DATA", kana: "nodata" };
+
+  return candidates[Math.floor(prng() * candidates.length)];
+}
+
 export const KanaEngine: {
   table: KanaTable;
   tokenize(kanaWord: string): string[];
