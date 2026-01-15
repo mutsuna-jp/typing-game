@@ -166,6 +166,9 @@
   let isFileError = false;
   let isStartEnabled = false;
 
+  // Mobile Input Mode: "flick" or "halfwidth"
+  let inputMode: "flick" | "halfwidth" = "flick";
+
   type Bonus = { id: number; text: string; type: string };
   let scoreBonuses: Bonus[] = [];
   let timeBonuses: Bonus[] = [];
@@ -723,6 +726,12 @@
       }
     }
 
+    // Load input mode preference
+    const savedInputMode = localStorage.getItem("typing_game_input_mode");
+    if (savedInputMode === "flick" || savedInputMode === "halfwidth") {
+      inputMode = savedInputMode;
+    }
+
     if (!userId) {
       const chars =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -779,6 +788,11 @@
       if (/^[a-z0-9\-]$/.test(char)) Game.processInput(char);
       target.value = "";
     }
+  }
+
+  function toggleInputMode() {
+    inputMode = inputMode === "flick" ? "halfwidth" : "flick";
+    localStorage.setItem("typing_game_input_mode", inputMode);
   }
 </script>
 
@@ -1029,6 +1043,13 @@
         >
           {gameStats ? "RETRY" : isPreparing ? "LOADING..." : "START GAME"}
         </button>
+        <button
+          class="btn input-mode-toggle"
+          on:click={toggleInputMode}
+          title="入力モード切替"
+        >
+          {inputMode === "flick" ? "📱 フリック入力" : "🔤 半角入力"}
+        </button>
       </div>
 
       {#if showErrorList}
@@ -1064,7 +1085,7 @@
       {/if}
 
       <input
-        type="password"
+        type={inputMode === "flick" ? "text" : "password"}
         id="hidden-input"
         autocomplete="off"
         spellcheck="false"
@@ -1322,6 +1343,22 @@
     align-items: center;
     gap: 10px;
     width: 100%;
+  }
+
+  .input-mode-toggle {
+    font-size: 1rem;
+    padding: 8px 20px;
+    margin-top: 5px;
+    border-color: oklch(70% 0.15 200);
+    color: oklch(70% 0.15 200);
+    box-shadow: 0 0 8px oklch(70% 0.15 200 / 0.4);
+  }
+
+  .input-mode-toggle:hover,
+  .input-mode-toggle:focus {
+    background: oklch(70% 0.15 200);
+    color: oklch(0% 0 0);
+    box-shadow: 0 0 15px oklch(70% 0.15 200 / 0.7);
   }
 
   #file-status {
