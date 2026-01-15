@@ -783,10 +783,34 @@
     if (!isPlaying) return;
     const target = e.target as HTMLInputElement;
     const val = target.value;
+
     if (val.length > 0) {
-      const char = val.slice(-1).toLowerCase();
-      if (/^[a-z0-9\-]$/.test(char)) Game.processInput(char);
-      target.value = "";
+      if (inputMode === "flick") {
+        // フリック入力モード: 日本語をローマ字に変換
+        const hiragana = val.slice(-1);
+
+        // ひらがなからローマ字への変換テーブルを取得
+        const romajiPatterns = KanaEngine.table[hiragana];
+
+        if (romajiPatterns && romajiPatterns.length > 0) {
+          // 最初のパターン(最も一般的なローマ字)を使用
+          const romaji = romajiPatterns[0];
+
+          // ローマ字の各文字を順番に処理
+          for (let i = 0; i < romaji.length; i++) {
+            const char = romaji[i];
+            if (/^[a-z0-9\-]$/.test(char)) {
+              Game.processInput(char);
+            }
+          }
+        }
+        target.value = "";
+      } else {
+        // 半角入力モード: 従来通りの処理
+        const char = val.slice(-1).toLowerCase();
+        if (/^[a-z0-9\-]$/.test(char)) Game.processInput(char);
+        target.value = "";
+      }
     }
   }
 
