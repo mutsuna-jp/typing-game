@@ -844,22 +844,26 @@
     if (inputText && currentWord && tokenIndex < currentWord.tokens.length) {
       const targetToken = currentWord.tokens[tokenIndex];
 
-      // 入力中の最後の文字をチェック
-      const lastChar = inputText.slice(-1);
-
-      if (lastChar === targetToken) {
+      // 入力テキスト全体をチェック(拗音対応: 「しょ」「きゃ」など)
+      // 入力テキストの中に目標のトークンが含まれているかチェック
+      if (inputText === targetToken || inputText.endsWith(targetToken)) {
         // 一致! 即座に処理
         autoConfirmed = true;
         compositionText = "";
         composingText = "";
 
-        Game.processFlickInput(lastChar);
+        Game.processFlickInput(targetToken);
 
         // 入力をクリア
         const target = e.target as HTMLInputElement;
         if (target) {
           target.value = "";
         }
+
+        // 次のフレームでcomposingTextを再度クリア(確実にUI更新)
+        setTimeout(() => {
+          composingText = "";
+        }, 0);
       }
     }
   }
