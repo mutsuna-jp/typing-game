@@ -7,6 +7,7 @@ export const GAME_CONFIG = {
   COMBO_MULTIPLIER: 0.05,
   PERFECT_SCORE_BONUS: 20,
   DEFAULT_TIME: 60,
+  MAX_TIME: 90,
 };
 
 /**

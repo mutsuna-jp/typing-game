@@ -11,5 +11,12 @@
 		"directory": ".svelte-kit/cloudflare"
 	},
 	"workers_dev": true,
-	"preview_urls": true
+	"preview_urls": true,
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "typing-game-db",
+			"database_id": "14e4c1b5-5394-43d3-a9d5-99b9b48cb986"
+		}
+	]
 }

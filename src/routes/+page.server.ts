@@ -9,12 +9,37 @@ import {
 import { fail } from "@sveltejs/kit";
 import wordsCsv from "$lib/words.csv?raw";
 
-export const load = (async () => {
+export const load = (async ({ platform, url }) => {
+  const userId = url.searchParams.get("userId");
+  let top5: any[] = [];
+  let userBest: any = null;
+
+  if (platform?.env?.DB) {
+    try {
+      // Fetch Top 5
+      const { results } = await platform.env.DB.prepare(
+        "SELECT username, score, kpm FROM scores ORDER BY score DESC LIMIT 5"
+      ).all();
+      top5 = results;
+
+      // Fetch user's best if userId is provided
+      if (userId && userId.startsWith("usr_")) {
+        userBest = await platform.env.DB.prepare(
+          "SELECT score, kpm, (SELECT COUNT(*) + 1 FROM scores WHERE score > s.score) as rank FROM scores s WHERE user_id = ?"
+        )
+          .bind(userId)
+          .first();
+      }
+    } catch (e) {
+      console.error("D1 Load Error:", e);
+    }
+  }
+
   try {
     const { words, errors } = parseWords(wordsCsv);
-    return { words, errors, count: words.length };
+    return { words, errors, count: words.length, top5, userBest };
   } catch (e) {
-    return { words: [], errors: [], count: 0 };
+    return { words: [], errors: [], count: 0, top5, userBest };
   }
 }) satisfies PageServerLoad;
 
@@ -24,7 +49,7 @@ const SESSION_TTL = 10 * 60 * 1000; // 10 minutes
 
 // Official words cached on server for validation
 const OFFICIAL_WORDS = parseWords(wordsCsv).words.filter(
-  (w) => !w.kana.includes("ー"),
+  (w) => !w.kana.includes("ー")
 );
 
 export const actions = {
@@ -42,18 +67,28 @@ export const actions = {
       }
     }
 
-    return { gameId: id, seed };
+    // Return a plain serializable object expected by SvelteKit actions
+    return { success: true, gameId: id, seed };
   },
 
-  submitScore: async ({ request }) => {
+  submitScore: async ({ request, platform }) => {
     try {
-      const data = (await request.json()) as {
+      const fd = await request.formData();
+      const data = JSON.parse(fd.get("json") as string) as {
         score: number;
         keyLog: { key: string; time: number }[];
         playedWords: { disp: string; kana: string; startTime: number }[];
+        duration?: number;
         gameId: string;
+        userId?: string;
+        username?: string;
       };
-      const { score, keyLog, playedWords, gameId } = data;
+      const { score, keyLog, playedWords, gameId, duration, userId, username } =
+        data;
+
+      console.log(
+        `[SUBMIT] gameId=${gameId} pending=${pendingSessions.has(gameId)}`
+      );
 
       // 1. Basic Validity & Session Check
       if (!gameId || !pendingSessions.has(gameId)) {
@@ -80,11 +115,10 @@ export const actions = {
 
       // 2. Game Duration Check
       const lastKeyTime = keyLog[keyLog.length - 1]?.time || 0;
-      const totalGameTimeSeconds = lastKeyTime / 1000;
-      // Allowed time is DEFAULT_TIME (60) plus bonuses. 
-      // Instead of tracking exact bonuses here (which we could from server calculation), 
-      // we at least check that lastKeyTime is within a reasonable upper bound (e.g. 5 minutes).
-      if (totalGameTimeSeconds > 300) {
+      const totalGameTimeSeconds = duration || lastKeyTime / 1000;
+
+      // Safety limit: No game should last more than 10 minutes even with bonuses
+      if (totalGameTimeSeconds > 600) {
         return fail(400, { message: "Game duration exceeded limit" });
       }
 
@@ -94,7 +128,7 @@ export const actions = {
       let currentCombo = 0;
       let correctKeys = 0;
       let keyIdx = 0;
-      let serverTimeLeft = GAME_CONFIG.DEFAULT_TIME;
+      let totalTimeBonuses = 0;
 
       for (let i = 0; i < playedWords.length; i++) {
         const clientWord = playedWords[i];
@@ -103,19 +137,25 @@ export const actions = {
         const expectedWord = getNextWordSeeded(
           OFFICIAL_WORDS,
           clientWord.startTime,
-          prng,
+          prng
         );
 
         if (clientWord.kana !== expectedWord.kana) {
           return fail(400, {
-            message: `Word mismatch at index ${i}. Expected ${expectedWord.kana}, got ${clientWord.kana}`,
+            message: `Word mismatch at index ${i}. Expected ${expectedWord.kana}, got ${clientWord.kana} (seed: ${session.seed})`,
           });
         }
 
-        // Check if the game should have been over by this word's start time
-        if (serverTimeLeft <= 0 && i < playedWords.length - 1) {
-          // It's possible the last word was started just before time ran out.
-          // But if multiple words follow, something is wrong.
+        // Check if the word was started within valid time
+        // Word must start before (Initial Time + Total Bonuses earned so far)
+        if (
+          clientWord.startTime >
+          GAME_CONFIG.DEFAULT_TIME + totalTimeBonuses + 2
+        ) {
+          // Added 2s grace for network/lag
+          return fail(400, {
+            message: `Invalid word start time at index ${i}. Time budget exceeded.`,
+          });
         }
 
         const tokens = KanaEngine.tokenize(clientWord.kana);
@@ -124,8 +164,6 @@ export const actions = {
         let hasErrorInWord = false;
 
         // Simulation: Process keys belonging to this word
-        // In the client, wordComplete() calls nextWord().
-        // So we process keys until the word is complete.
         while (tokenIndex < tokens.length && keyIdx < keyLog.length) {
           const keyEntry = keyLog[keyIdx];
           const key = keyEntry.key;
@@ -168,31 +206,28 @@ export const actions = {
           if (!hasErrorInWord) {
             scoreGain += GAME_CONFIG.PERFECT_SCORE_BONUS;
             const timeBonus = Math.max(1, Math.floor(wordLen / 2));
-            serverTimeLeft += timeBonus;
+            totalTimeBonuses += timeBonus;
           }
           serverScore += scoreGain;
         }
-        
-        // Every word consumed 1 second of "tick" time approximately? 
-        // No, we should check elapsed time vs serverTimeLeft.
-        // Actually the client is simple: timeLeft decreases every 1s.
-        // The real constraint is: lastKeyTime <= (INITIAL_TIME + SUM(timeBonuses)) * 1000
       }
 
       // --- 4. Final Security Sanity Checks ---
 
       // 4.1 Score Mismatch
-      if (serverScore !== score) {
+      if (Math.abs(serverScore - score) > 0) {
         return fail(400, {
           message: `Score mismatch: Client reported ${score}, but server calculated ${serverScore}`,
         });
       }
 
       // 4.2 Typing Speed (KPM)
-      const durationMin = lastKeyTime / 1000 / 60;
-      const kpm = durationMin > 0 ? (correctKeys / durationMin) : 0;
-      if (kpm > 1000) {
-        return fail(400, { message: "Typing speed exceeds human limits (KPM > 1000)" });
+      const durationMin = totalGameTimeSeconds / 60;
+      const kpm = durationMin > 0.05 ? correctKeys / durationMin : 0;
+      if (kpm > 1200) {
+        return fail(400, {
+          message: "Typing speed exceeds human limits (KPM > 1200)",
+        });
       }
 
       // 4.3 Input Consistency (Bot detection)
@@ -202,31 +237,72 @@ export const actions = {
           intervals.push(keyLog[i].time - keyLog[i - 1].time);
         }
         const avg = intervals.reduce((a, b) => a + b) / intervals.length;
-        const variance = intervals.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / intervals.length;
-        
-        // Humans naturally have variance in typing. Bots don't (unless programmed to).
-        // A very low variance is a strong indicator of a simple macro/bot.
-        if (variance < 5) {
-          return fail(400, { message: "Bot detected: input intervals are too consistent" });
+        const variance =
+          intervals.reduce((a, b) => a + Math.pow(b - avg, 2), 0) /
+          intervals.length;
+
+        if (variance < 2) {
+          return fail(400, {
+            message: "Bot detected: input intervals are too consistent",
+          });
         }
 
-        // Check for "burst" typing (multiple keys in very same millisecond)
-        const bursts = intervals.filter(v => v === 0).length;
-        if (bursts > keyLog.length * 0.5) {
+        const bursts = intervals.filter((v) => v === 0).length;
+        if (bursts > keyLog.length * 0.8) {
           return fail(400, { message: "Bot detected: impossible burst input" });
         }
       }
 
-      console.log(`[VERIFIED] Score: ${serverScore}, KPM: ${kpm.toFixed(1)}, Session: ${gameId}`);
+      console.log(
+        `[VERIFIED] Score: ${serverScore}, KPM: ${kpm.toFixed(
+          1
+        )}, Session: ${gameId}`
+      );
+
+      // --- 5. D1 Integration: Save if Personal Best ---
+      let isNewRecord = false;
+      const db = platform?.env?.DB;
+
+      if (db && userId && userId.startsWith("usr_")) {
+        // Use guest if username is empty
+        const finalName = username?.trim() || "guest";
+
+        // Check current best
+        const currentBest = await db
+          .prepare("SELECT score FROM scores WHERE user_id = ?")
+          .bind(userId)
+          .first<{ score: number }>();
+
+        if (!currentBest || serverScore > currentBest.score) {
+          // INSERT or UPDATE (using SQLITE's INSERT OR REPLACE or similar if unique)
+          // Since we have a UNIQUE constraint on user_id, we can use ON CONFLICT
+          await db
+            .prepare(
+              `INSERT INTO scores (user_id, username, score, kpm) 
+               VALUES (?, ?, ?, ?) 
+               ON CONFLICT(user_id) DO UPDATE SET 
+               username = excluded.username, 
+               score = excluded.score, 
+               kpm = excluded.kpm,
+               played_at = CURRENT_TIMESTAMP`
+            )
+            .bind(userId, finalName, serverScore, Math.round(kpm))
+            .run();
+          isNewRecord = true;
+        }
+      }
 
       return {
         success: true,
         verifiedScore: serverScore,
         kpm: Math.round(kpm),
+        isNewRecord,
       };
     } catch (e) {
       console.error("Verification error:", e);
-      return fail(500, { message: "Internal server error during verification" });
+      return fail(500, {
+        message: "Internal server error during verification",
+      });
     }
   },
 } satisfies Actions;

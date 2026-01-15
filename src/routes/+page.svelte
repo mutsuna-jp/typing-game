@@ -1,6 +1,16 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  export let data: { words?: Word[]; errors?: string[]; count?: number } = {};
+  import type { PageData } from "./$types";
+
+  export let data: PageData;
+  let { words: initialWords, top5, userBest } = data;
+
+  let userId = "";
+  let username = "";
+  let isSubmittingRanking = false;
+  let isRankingSubmitted = false;
+  let showTransferModal = false;
+  let transferInput = "";
 
   // Type aliases
   type Word = { disp: string; kana: string };
@@ -39,6 +49,7 @@
     BASE_SCORE_PER_CHAR: GAME_CONFIG.BASE_SCORE_PER_CHAR,
     COMBO_MULTIPLIER: GAME_CONFIG.COMBO_MULTIPLIER,
     PERFECT_SCORE_BONUS: GAME_CONFIG.PERFECT_SCORE_BONUS,
+    MAX_TIME: GAME_CONFIG.MAX_TIME,
 
     DIFFICULTY_THRESHOLDS: [20, 40, 60], // Seconds thresholds for difficulty increase
     WORD_LENGTHS: {
@@ -138,6 +149,10 @@
   let currentGameId: string | null = null;
   let isCustomCSV = false;
 
+  // CSV parse errors (for UI listing)
+  let lastErrors: string[] = [];
+  let showErrorList = false;
+
   let message = "PRESS START OR LOAD CSV";
   let fileStatus = "";
   let isFileError = false;
@@ -185,8 +200,15 @@
       isStartEnabled = this.activeList.length > 0;
     },
 
+    gameSeed: null as number | null,
     setSeed(seed: number) {
+      if (typeof seed !== "number" || !Number.isFinite(seed)) {
+        this.gamePRNG = null;
+        this.gameSeed = null;
+        return;
+      }
       this.gamePRNG = createPRNG(seed);
+      this.gameSeed = seed;
     },
 
     loadCSV(text: string) {
@@ -219,9 +241,10 @@
   /**
    * Game Controller
    */
-  let timerId: number | null = null;
+  let timerId: ReturnType<typeof setInterval> | null = null;
   let clickHandler: () => void;
   let keydownHandler: (e: KeyboardEvent) => void;
+  let isPreparing = false;
 
   const Game = {
     async init() {
@@ -230,24 +253,30 @@
       const errCount = WordManager.lastErrors.length || serverErrCount;
 
       if (count > 0) {
-        fileStatus = `FILE LOADED: ${count} WORDS${errCount ? ` (${errCount} ERRORS)` : ""}`;
-        isFileError = errCount > 0;
-        if (WordManager.lastErrors.length > 0)
-          message = WordManager.lastErrors.slice(0, 3).join("  ");
-        else if (serverErrCount > 0)
-          message = data!.errors!.slice(0, 3).join("  ");
+        // Words loaded — treat ignored rows as non-fatal (user-visible as IGNORED)
+        fileStatus = `FILE LOADED: ${count} WORDS${errCount ? ` (${errCount} IGNORED)` : ""}`;
+        isFileError = false;
+        if (errCount > 0) {
+          lastErrors = WordManager.lastErrors.length
+            ? WordManager.lastErrors
+            : data?.errors || [];
+          message = `${errCount} invalid rows ignored`;
+        } else {
+          lastErrors = [];
+          message = "";
+        }
       } else {
         fileStatus = "NO WORDS LOADED";
         isFileError = true;
-        if (errCount > 0)
-          message = (
-            WordManager.lastErrors.length > 0
-              ? WordManager.lastErrors
-              : data?.errors || []
-          )
-            .slice(0, 3)
-            .join("  ");
-        else message = "LOAD CSV TO START";
+        if (errCount > 0) {
+          lastErrors = WordManager.lastErrors.length
+            ? WordManager.lastErrors
+            : data?.errors || [];
+          message = `${errCount} invalid rows — no data loaded`;
+        } else {
+          lastErrors = [];
+          message = "LOAD CSV TO START";
+        }
       }
     },
 
@@ -262,16 +291,26 @@
           const count = WordManager.loadCSV(result);
           const errCount = WordManager.lastErrors.length;
           if (count > 0) {
-            fileStatus = `FILE LOADED: ${count} WORDS${errCount ? ` (${errCount} ERRORS)` : ""}`;
-            isFileError = errCount > 0;
-            if (errCount > 0)
-              message = WordManager.lastErrors.slice(0, 3).join("  ");
+            // Words loaded — ignored rows are non-fatal
+            fileStatus = `FILE LOADED: ${count} WORDS${errCount ? ` (${errCount} IGNORED)` : ""}`;
+            isFileError = false;
+            if (errCount > 0) {
+              lastErrors = WordManager.lastErrors;
+              message = `${errCount} invalid rows ignored`;
+            } else {
+              lastErrors = [];
+              message = "";
+            }
           } else {
             fileStatus = errCount
               ? `ERROR: INVALID CSV (${errCount} ERRORS)`
               : "ERROR: NO DATA";
             isFileError = true;
-            message = "LOAD VALID CSV";
+            if (errCount > 0) lastErrors = WordManager.lastErrors;
+            else lastErrors = [];
+            message = errCount
+              ? `${errCount} invalid rows found — load a valid CSV`
+              : "ERROR: NO DATA";
           }
         }
       };
@@ -279,39 +318,105 @@
     },
 
     async start() {
-      if (WordManager.activeList.length === 0) {
-        message = "LOAD CSV TO START";
-        fileStatus = "NO WORDS LOADED";
-        isFileError = true;
+      if (WordManager.activeList.length === 0 || isPreparing || isPlaying) {
+        if (WordManager.activeList.length === 0) {
+          message = "LOAD CSV TO START";
+          fileStatus = "NO WORDS LOADED";
+          isFileError = true;
+        }
         return;
       }
 
+      isPreparing = true;
       AudioEngine.init();
       message = "PREPARING SESSION...";
       this.resetState();
 
       try {
-        const res = await fetch("?/getGameToken", { method: "POST" });
-        const result = (await res.json()) as any;
-        const data = JSON.parse(result.data);
-        currentGameId = data[1].gameId;
-        WordManager.setSeed(data[1].seed);
+        const res = await fetch("?/getGameToken", {
+          method: "POST",
+          body: new FormData(),
+        });
+        if (!res.ok) throw new Error(`Token request failed: ${res.status}`);
+
+        // Expect a simple JSON object: { success: true, gameId, seed }
+        let result: any = await res.json();
+
+        // Some adapters might still wrap data; try to extract without logging
+        let gameObj: any = result;
+        if (result?.data) {
+          try {
+            gameObj =
+              typeof result.data === "string"
+                ? JSON.parse(result.data)
+                : result.data;
+          } catch {
+            gameObj = result.data;
+          }
+        }
+
+        // If an array is returned for compatibility, pick the object/seed element
+        if (Array.isArray(gameObj)) {
+          // Prefer an explicit string gameId if present (adapter may return [obj, gameIdStr, seed])
+          const strId = gameObj.find((el: any) => typeof el === "string");
+          const numSeed = gameObj.find((el: any) => typeof el === "number");
+          if (strId && numSeed !== undefined) {
+            gameObj = { gameId: strId, seed: numSeed };
+          } else {
+            // Fallback: pick an object with numeric seed, or reconstruct
+            const obj = gameObj.find(
+              (el: any) =>
+                el && typeof el === "object" && typeof el.seed === "number",
+            );
+            if (obj) {
+              // If the object contains a numeric small 'gameId' (legacy), prefer string id if available
+              if (!obj.gameId && strId) obj.gameId = strId;
+              gameObj = obj;
+            } else {
+              if (numSeed !== undefined) {
+                const possibleGameId = gameObj.find(
+                  (el: any) => typeof el === "string" || typeof el === "number",
+                );
+                gameObj = {
+                  gameId:
+                    typeof possibleGameId === "string"
+                      ? possibleGameId
+                      : (possibleGameId ?? null),
+                  seed: numSeed,
+                };
+              } else {
+                gameObj = {};
+              }
+            }
+          }
+        }
+
+        currentGameId = gameObj?.gameId != null ? String(gameObj.gameId) : null;
+        if (typeof gameObj?.seed === "number")
+          WordManager.setSeed(gameObj.seed);
       } catch (e) {
         console.error("Session error:", e);
         message = "SESSION ERROR. TRY AGAIN.";
+        isPreparing = false;
         return;
       }
 
       setTimeout(() => {
+        isPreparing = false;
         this.nextWord();
         isPlaying = true;
-        timerId = setInterval(() => this.tick(), 1000) as unknown as number;
+        if (timerId) clearInterval(timerId);
+        timerId = setInterval(() => this.tick(), 1000);
         hiddenInputEl?.focus();
         message = "";
       }, 800);
     },
 
     resetState() {
+      if (timerId) {
+        clearInterval(timerId);
+        timerId = null;
+      }
       isPlaying = false;
       score = 0;
       timeLeft = CONFIG.DEFAULT_TIME;
@@ -395,6 +500,14 @@
       hasErrorInWord = true;
       errorIndex = tokenIndex;
       AudioEngine.playError();
+
+      // Time penalty
+      if (timeLeft > 0) {
+        timeLeft = Math.max(0, timeLeft - 1);
+        showBonus(timeBonuses, "-1", "error");
+        if (timeLeft <= 0) Game.gameOver();
+      }
+
       setTimeout(() => {
         if (errorIndex === tokenIndex) errorIndex = null;
       }, 300);
@@ -410,8 +523,16 @@
 
       if (!hasErrorInWord) {
         const timeBonus = Math.max(1, Math.floor(wordLength / 2));
-        timeLeft += timeBonus;
-        showBonus(timeBonuses, `PERFECT +${timeBonus}`, "perfect");
+        const prevTime = timeLeft;
+        timeLeft = Math.min(CONFIG.MAX_TIME, timeLeft + timeBonus);
+        const actualBonus = timeLeft - prevTime;
+
+        if (actualBonus > 0) {
+          showBonus(timeBonuses, `PERFECT +${actualBonus}`, "perfect");
+        } else {
+          showBonus(timeBonuses, "MAX!", "perfect");
+        }
+
         scoreGain += CONFIG.PERFECT_SCORE_BONUS;
         AudioEngine.playBonus();
       }
@@ -426,7 +547,10 @@
 
     gameOver() {
       isPlaying = false;
-      if (timerId) clearInterval(timerId);
+      if (timerId) {
+        clearInterval(timerId);
+        timerId = null;
+      }
       AudioEngine.playGameOver();
 
       const total = correctKeys + wrongKeys;
@@ -443,48 +567,50 @@
       } else {
         message = "✓ FINISHED (CUSTOM LIST - OFFLINE)";
       }
-
-      // Log for verification (Development)
-      console.log("Game Session Data:", {
-        stats: gameStats,
-        playedWordsCount: playedWords.length,
-        keyLogCount: keyLog.length,
-        playedWords,
-        keyLog,
-      });
     },
 
     async submitToServer(currentScore: number) {
       if (!currentGameId) return;
 
       try {
-        const response = await fetch("?/submitScore", {
-          method: "POST",
-          body: JSON.stringify({
+        const fd = new FormData();
+        fd.append(
+          "json",
+          JSON.stringify({
             score: currentScore,
             keyLog,
             playedWords,
+            duration: (Date.now() - startTime) / 1000,
             gameId: currentGameId,
           }),
-          headers: {
-            "Content-Type": "application/json",
-          },
+        );
+
+        const response = await fetch("?/submitScore", {
+          method: "POST",
+          body: fd,
         });
 
         currentGameId = null;
 
         const result = (await response.json()) as any;
-        // SvelteKit action response format is usually nested in 'data'
-        const data = JSON.parse(result.data);
+        // SvelteKit action returns a devalue-encoded array. The actual returned object is at index 0.
+        const actionData = result.data ? JSON.parse(result.data) : null;
+        const verifiedData = Array.isArray(actionData)
+          ? actionData[0]
+          : actionData;
 
-        if (response.ok && data[1]?.success) {
-          console.log("Server verification success:", data[1]);
+        if (response.ok && verifiedData?.success) {
           message = "✓ SCORE VERIFIED";
+          // If a personal best was achieved, update the ranking status
+          if (verifiedData.isNewRecord) {
+            isRankingSubmitted = true;
+          }
         } else {
-          console.error("Server verification failed:", data);
+          console.error("Server verification failed:", result);
           message = "⚠ VERIFICATION FAILED";
-          if (data[1]?.message) {
-            message += `: ${data[1].message}`;
+          const errMsg = verifiedData?.message || (result as any)?.message;
+          if (errMsg) {
+            message += `: ${errMsg}`;
           }
         }
       } catch (e) {
@@ -492,10 +618,100 @@
         message = "COMMUNICATION ERROR";
       }
     },
+
+    async registerRanking(newName: string) {
+      if (!userId || isSubmittingRanking) return;
+
+      isSubmittingRanking = true;
+      try {
+        const fd = new FormData();
+        // Since we only save personal bests, this registration button is primarily for
+        // updating the name or submitting the current session if it was a personal best.
+        // The server-side logic already handles the "personal best" check.
+        fd.append(
+          "json",
+          JSON.stringify({
+            score: gameStats!.score,
+            keyLog,
+            playedWords,
+            duration: (Date.now() - startTime) / 1000,
+            gameId: currentGameId || "retry-reg",
+            userId,
+            username: newName,
+          }),
+        );
+
+        const response = await fetch("?/submitScore", {
+          method: "POST",
+          body: fd,
+        });
+
+        const result = (await response.json()) as any;
+        const actionData = result.data ? JSON.parse(result.data) : null;
+        const verifiedData = Array.isArray(actionData)
+          ? actionData[0]
+          : actionData;
+
+        if (response.ok && verifiedData?.success) {
+          isRankingSubmitted = true;
+          username = newName;
+          localStorage.setItem("typing_game_username", username);
+          message = "✓ RANKING REGISTERED";
+        } else {
+          message = "⚠ REGISTRATION FAILED";
+        }
+      } catch (e) {
+        console.error("Reg error:", e);
+        message = "COMMUNICATION ERROR";
+      } finally {
+        isSubmittingRanking = false;
+      }
+    },
+
+    importTransferId() {
+      if (
+        !transferInput ||
+        !transferInput.startsWith("usr_") ||
+        transferInput.length !== 64
+      ) {
+        alert(
+          "Invalid Transfer ID. Must start with 'usr_' and be 64 characters.",
+        );
+        return;
+      }
+      if (
+        confirm(
+          "Importing this ID will overwrite your current progress. Continue?",
+        )
+      ) {
+        localStorage.setItem("typing_game_user_id", transferInput);
+        location.reload(); // Reload to apply new ID and fetch rankings
+      }
+    },
   };
 
   onMount(async () => {
-    await Game.init();
+    // Load or generate user_id
+    userId = localStorage.getItem("typing_game_user_id") || "";
+    username = localStorage.getItem("typing_game_username") || "";
+
+    if (!userId) {
+      const chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      let rand = "";
+      for (let i = 0; i < 60; i++) {
+        rand += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      userId = "usr_" + rand;
+      localStorage.setItem("typing_game_user_id", userId);
+    }
+
+    // Update URL if userId is set but not in params (for SSR userBest)
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("userId")) {
+      url.searchParams.set("userId", userId);
+      window.history.replaceState({}, "", url.toString());
+    }
     clickHandler = () => {
       if (isPlaying) hiddenInputEl?.focus();
     };
@@ -513,6 +729,9 @@
       }
     };
     document.addEventListener("keydown", keydownHandler);
+
+    // Initialize game with data from server
+    await Game.init();
   });
 
   onDestroy(() => {
@@ -571,9 +790,106 @@
       </div>
 
       {#if gameStats}
-        <GameReport stats={gameStats} />
+        <GameReport
+          stats={gameStats}
+          {userId}
+          currentUsername={username}
+          isOnline={!isCustomCSV}
+          isSubmitting={isSubmittingRanking}
+          isSubmitted={isRankingSubmitted}
+          on:submit={(e: any) => Game.registerRanking(e.detail.username)}
+        />
       {:else}
         <WordDisplay {currentWord} {tokenIndex} {inputBuffer} {errorIndex} />
+      {/if}
+
+      {#if !isPlaying && !gameStats}
+        <div class="ranking-preview">
+          <div class="ranking-header">TOP 5 RANKING</div>
+          <div class="rank-list">
+            {#each top5 as entry, i}
+              <div class="rank-item">
+                <span class="rank-num">#{i + 1}</span>
+                <span class="rank-name">{entry.username}</span>
+                <span class="rank-score">{entry.score} pts</span>
+              </div>
+            {/each}
+          </div>
+          {#if userBest}
+            <div class="user-best">
+              YOUR BEST: #{userBest.rank} ({userBest.score} pts / {userBest.kpm}
+              KPM)
+            </div>
+          {/if}
+          <div
+            style="margin-top: 10px; display: flex; gap: 5px; justify-content: center;"
+          >
+            <a href="{base}/rankings" class="btn small subtle"
+              >VIEW ALL RANKINGS</a
+            >
+            <button
+              class="btn small subtle"
+              on:click={() => (showTransferModal = true)}>TRANSFER DATA</button
+            >
+          </div>
+        </div>
+      {/if}
+
+      {#if showTransferModal}
+        <div
+          class="modal-backdrop"
+          role="presentation"
+          on:click={() => (showTransferModal = false)}
+          on:keydown={(e) => e.key === "Escape" && (showTransferModal = false)}
+        >
+          <div
+            class="modal"
+            role="dialog"
+            aria-modal="true"
+            tabindex="-1"
+            on:click|stopPropagation
+            on:keydown|stopPropagation
+          >
+            <h2>DATA TRANSFER</h2>
+            <div class="modal-body">
+              <p style="font-size: 0.8rem; color: oklch(75% 0 0);">
+                CAUTION: KEEP THIS ID SECRET. DO NOT SHARE.
+              </p>
+              <div class="transfer-box">
+                <div class="box-label">YOUR TRANSFER ID:</div>
+                <div class="id-display">{userId}</div>
+                <button
+                  class="btn small"
+                  on:click={() => navigator.clipboard.writeText(userId)}
+                  >COPY ID</button
+                >
+              </div>
+              <hr
+                style="border: 0; border-top: 1px dashed oklch(45% 0 250); margin: 20px 0;"
+              />
+              <div class="import-box">
+                <div class="box-label">IMPORT TRANSFER ID:</div>
+                <input
+                  type="text"
+                  bind:value={transferInput}
+                  placeholder="usr_..."
+                  style="width: 100%; margin-bottom: 10px;"
+                />
+                <button
+                  class="btn small"
+                  on:click={() => Game.importTransferId()}
+                  >IMPORT & RELOAD</button
+                >
+              </div>
+            </div>
+            <div class="modal-actions">
+              <button
+                class="btn small subtle"
+                on:click={() => (showTransferModal = false)}>CLOSE</button
+              >
+            </div>
+          </div>
+        </div>
       {/if}
 
       <div id="message">{message}</div>
@@ -592,6 +908,17 @@
           >
             [{isCustomCSV ? "CUSTOM / OFFLINE" : "OFFICIAL / ONLINE"}]
           </span>
+          {#if lastErrors.length > 0}
+            <button
+              id="show-errors-btn"
+              class="btn small subtle"
+              on:click={() => (showErrorList = true)}
+              style="margin-left:10px;"
+              aria-label="Show CSV errors"
+            >
+              Errors ({lastErrors.length})
+            </button>
+          {/if}
         </div>
       {/if}
 
@@ -599,24 +926,58 @@
         id="controls-container"
         style="display: {!isPlaying ? 'block' : 'none'}"
       >
-        <label for="csv-input" class="btn file-btn">LOAD CSV</label>
-        <input
-          type="file"
-          id="csv-input"
-          accept=".csv"
-          style="display:none"
-          on:change={(e) => Game.handleFile(e)}
-        />
+        {#if !gameStats}
+          <label for="csv-input" class="btn file-btn">LOAD CSV</label>
+          <input
+            type="file"
+            id="csv-input"
+            accept=".csv"
+            style="display:none"
+            on:change={(e) => Game.handleFile(e)}
+          />
+        {/if}
         <button
           id="start-btn"
           class="btn"
-          disabled={!isStartEnabled}
-          class:disabled={!isStartEnabled}
+          disabled={!isStartEnabled || isPreparing}
+          class:disabled={!isStartEnabled || isPreparing}
           on:click={() => Game.start()}
         >
-          {gameStats ? "RETRY" : "START GAME"}
+          {gameStats ? "RETRY" : isPreparing ? "LOADING..." : "START GAME"}
         </button>
       </div>
+
+      {#if showErrorList}
+        <div
+          class="modal-backdrop"
+          role="presentation"
+          on:click={() => (showErrorList = false)}
+          on:keydown={(e) => e.key === "Escape" && (showErrorList = false)}
+        >
+          <div
+            class="modal"
+            role="dialog"
+            aria-modal="true"
+            tabindex="-1"
+            on:click|stopPropagation
+            on:keydown|stopPropagation
+          >
+            <h2>CSV Error List</h2>
+            <div class="modal-body">
+              <ul>
+                {#each lastErrors as err}
+                  <li>{err}</li>
+                {/each}
+              </ul>
+            </div>
+            <div class="modal-actions">
+              <button class="btn" on:click={() => (showErrorList = false)}
+                >Close</button
+              >
+            </div>
+          </div>
+        </div>
+      {/if}
 
       <input
         type="password"
@@ -766,6 +1127,10 @@
     text-shadow: 0 0 5px oklch(80% 0.2 190);
     font-size: 1.4rem;
   }
+  .time-bonus.error {
+    color: oklch(65% 0.2 20);
+    text-shadow: 0 0 5px oklch(65% 0.2 20 / 0.8);
+  }
   .score-bonus {
     left: 0;
     top: -30px;
@@ -774,8 +1139,59 @@
 
   #message {
     font-size: 1.5rem;
-    margin-top: 20px;
+    margin-top: 10px;
     min-height: 2rem;
+  }
+
+  .ranking-preview {
+    margin-top: 20px;
+    width: 60%;
+    border: 1px solid oklch(45% 0 250);
+    padding: 10px;
+    background: oklch(10% 0 0 / 0.5);
+  }
+
+  .ranking-header {
+    font-size: 0.9rem;
+    color: oklch(45% 0 250);
+    margin-bottom: 5px;
+    border-bottom: 1px solid oklch(45% 0 250);
+  }
+
+  .rank-list {
+    text-align: left;
+    font-size: 1rem;
+  }
+
+  .rank-item {
+    display: flex;
+    justify-content: space-between;
+    margin: 2px 0;
+  }
+
+  .rank-num {
+    color: oklch(75% 0 0);
+    width: 30px;
+  }
+
+  .rank-name {
+    flex: 1;
+    color: oklch(100% 0 0);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .rank-score {
+    color: oklch(85% 0.2 90);
+  }
+
+  .user-best {
+    margin-top: 10px;
+    font-size: 0.8rem;
+    color: oklch(80% 0.2 160);
+    border-top: 1px dashed oklch(45% 0 250);
+    padding-top: 5px;
   }
 
   .btn {
@@ -894,6 +1310,98 @@
   }
   .turn-on-anim {
     animation: turn-on 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+  }
+
+  /* Modal for CSV error list */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 50;
+    padding: 20px;
+  }
+  .modal {
+    background: oklch(20% 0.02 250);
+    border: 4px solid oklch(100% 0 0);
+    padding: 20px;
+    max-width: 600px;
+    width: 100%;
+    max-height: 70vh;
+    overflow: auto;
+    text-align: left;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.6);
+  }
+  .modal h2 {
+    margin-top: 0;
+  }
+  .modal-body ul {
+    padding-left: 1rem;
+    margin: 0;
+  }
+  .modal-body li {
+    margin-bottom: 6px;
+    font-family: monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .transfer-box,
+  .import-box {
+    margin-top: 15px;
+    padding: 10px;
+    border: 1px solid oklch(45% 0 250);
+    background: oklch(10% 0 0 / 0.3);
+  }
+
+  .box-label {
+    font-size: 0.7rem;
+    color: oklch(45% 0 250);
+    margin-bottom: 5px;
+  }
+
+  .id-display {
+    font-family: monospace;
+    font-size: 0.7rem;
+    background: black;
+    color: oklch(85% 0.2 90);
+    padding: 10px;
+    word-break: break-all;
+    margin-bottom: 5px;
+    border: 1px solid oklch(25% 0 250);
+  }
+
+  .modal-actions {
+    margin-top: 12px;
+    text-align: right;
+  }
+  .btn.small {
+    padding: 6px 10px;
+    font-size: 0.9rem;
+  }
+
+  /* Subtle variant for less prominent buttons (e.g., CSV errors) */
+  .btn.subtle,
+  .btn.small.subtle {
+    border-color: oklch(55% 0.01 250);
+    color: oklch(55% 0.01 250);
+    box-shadow: none;
+    background: transparent;
+    transition:
+      background 0.15s,
+      color 0.15s,
+      box-shadow 0.15s;
+  }
+  .btn.subtle:hover,
+  .btn.small.subtle:hover,
+  .btn.subtle:focus,
+  .btn.small.subtle:focus {
+    background: oklch(55% 0.01 250 / 0.06);
+    color: oklch(100% 0 0);
+    box-shadow: none;
   }
 
   @media (max-width: 600px) {
