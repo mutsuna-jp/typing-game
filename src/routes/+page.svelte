@@ -846,12 +846,8 @@
     const targetToken = currentWord.tokens[tokenIndex];
     const isSpecial = isSpecialChar(targetToken);
 
-    // 特殊文字の場合のみcomposingTextに表示
-    if (isSpecial) {
-      composingText = inputText;
-    } else {
-      composingText = "";
-    }
+    // 入力を常に表示（特殊文字か基本文字かに関わらず）
+    composingText = inputText;
 
     // 一致判定
     if (inputText === targetToken || inputText.endsWith(targetToken)) {
