@@ -468,6 +468,34 @@
       hasErrorInWord = false;
     },
 
+    processFlickInput(hiragana: string) {
+      if (!currentWord) return;
+
+      // Log input (ひらがなをそのまま記録)
+      keyLog.push({
+        key: hiragana,
+        time: Date.now() - startTime,
+      });
+
+      const { tokens } = currentWord;
+      const currToken = tokens[tokenIndex];
+
+      // 入力されたひらがなと現在のトークンを直接比較
+      if (currToken === hiragana) {
+        // 正解
+        correctKeys++;
+        currentCombo++;
+        if (currentCombo > maxCombo) maxCombo = currentCombo;
+        AudioEngine.playType();
+
+        tokenIndex++;
+        if (tokenIndex >= tokens.length) this.wordComplete();
+      } else {
+        // 不正解
+        this.inputError();
+      }
+    },
+
     processInput(key: string) {
       if (!currentWord) return;
 
@@ -803,18 +831,10 @@
     compositionText = "";
 
     if (finalText && inputMode === "flick") {
-      // 確定した文字(濁点・小文字適用済み)を処理
-      const hiragana = finalText.slice(-1);
-      const romajiPatterns = KanaEngine.table[hiragana];
-
-      if (romajiPatterns && romajiPatterns.length > 0) {
-        const romaji = romajiPatterns[0];
-        for (let i = 0; i < romaji.length; i++) {
-          const char = romaji[i];
-          if (/^[a-z0-9\-]$/.test(char)) {
-            Game.processInput(char);
-          }
-        }
+      // フリック入力: 確定した各ひらがなを処理
+      for (let i = 0; i < finalText.length; i++) {
+        const hiragana = finalText[i];
+        Game.processFlickInput(hiragana);
       }
     }
 
