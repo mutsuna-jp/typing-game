@@ -93,7 +93,7 @@
       freq: number,
       type: OscillatorType | string,
       duration: number,
-      vol: number
+      vol: number,
     ) {
       if (!this.ctx) return;
       const osc = this.ctx.createOscillator();
@@ -103,7 +103,7 @@
       gain.gain.setValueAtTime(vol, this.ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(
         0.01,
-        this.ctx.currentTime + duration
+        this.ctx.currentTime + duration,
       );
       osc.connect(gain);
       gain.connect(this.ctx.destination);
@@ -237,7 +237,7 @@
         const word = getNextWordSeeded(
           this.activeList,
           elapsedTime,
-          this.gamePRNG
+          this.gamePRNG,
         );
         return { ...word, tokens: KanaEngine.tokenize(word.kana) };
       }
@@ -379,7 +379,7 @@
             // Fallback: pick an object with numeric seed, or reconstruct
             const obj = gameObj.find(
               (el: any) =>
-                el && typeof el === "object" && typeof el.seed === "number"
+                el && typeof el === "object" && typeof el.seed === "number",
             );
             if (obj) {
               // If the object contains a numeric small 'gameId' (legacy), prefer string id if available
@@ -388,7 +388,7 @@
             } else {
               if (numSeed !== undefined) {
                 const possibleGameId = gameObj.find(
-                  (el: any) => typeof el === "string" || typeof el === "number"
+                  (el: any) => typeof el === "string" || typeof el === "number",
                 );
                 gameObj = {
                   gameId:
@@ -610,7 +610,7 @@
             gameId: currentGameId,
             userId,
             username,
-          })
+          }),
         );
 
         const response = await fetch("?/submitScore", {
@@ -661,7 +661,7 @@
           JSON.stringify({
             userId,
             username: newName,
-          })
+          }),
         );
 
         const response = await fetch("?/registerName", {
@@ -698,13 +698,13 @@
         transferInput.length !== 64
       ) {
         alert(
-          "Invalid Transfer ID. Must start with 'usr_' and be 64 characters."
+          "Invalid Transfer ID. Must start with 'usr_' and be 64 characters.",
         );
         return;
       }
       if (
         confirm(
-          "Importing this ID will overwrite your current progress. Continue?"
+          "Importing this ID will overwrite your current progress. Continue?",
         )
       ) {
         localStorage.setItem("typing_game_user_id", transferInput);
@@ -779,28 +779,76 @@
     }
   });
 
+  let compositionText = "";
+  let isComposing = false;
+
+  function handleCompositionStart(e: CompositionEvent) {
+    isComposing = true;
+    compositionText = "";
+  }
+
+  function handleCompositionUpdate(e: CompositionEvent) {
+    compositionText = e.data || "";
+  }
+
+  function handleCompositionEnd(e: CompositionEvent) {
+    if (!isPlaying) {
+      isComposing = false;
+      compositionText = "";
+      return;
+    }
+
+    const finalText = e.data || compositionText;
+    isComposing = false;
+    compositionText = "";
+
+    if (finalText && inputMode === "flick") {
+      // 確定した文字(濁点・小文字適用済み)を処理
+      const hiragana = finalText.slice(-1);
+      const romajiPatterns = KanaEngine.table[hiragana];
+
+      if (romajiPatterns && romajiPatterns.length > 0) {
+        const romaji = romajiPatterns[0];
+        for (let i = 0; i < romaji.length; i++) {
+          const char = romaji[i];
+          if (/^[a-z0-9\-]$/.test(char)) {
+            Game.processInput(char);
+          }
+        }
+      }
+    }
+
+    // Clear input
+    const target = e.target as HTMLInputElement;
+    if (target) target.value = "";
+  }
+
   function handleHiddenInput(e: Event) {
     if (!isPlaying) return;
+
+    // フリック入力モードでIME変換中は何もしない
+    if (inputMode === "flick" && isComposing) {
+      return;
+    }
+
     const target = e.target as HTMLInputElement;
     const val = target.value;
 
     if (val.length > 0) {
       if (inputMode === "flick") {
-        // フリック入力モード: 日本語をローマ字に変換
-        const hiragana = val.slice(-1);
+        // フリック入力はcompositionendで処理するため、ここでは何もしない
+        // (compositionendが発火しない環境のフォールバック)
+        if (!isComposing) {
+          const hiragana = val.slice(-1);
+          const romajiPatterns = KanaEngine.table[hiragana];
 
-        // ひらがなからローマ字への変換テーブルを取得
-        const romajiPatterns = KanaEngine.table[hiragana];
-
-        if (romajiPatterns && romajiPatterns.length > 0) {
-          // 最初のパターン(最も一般的なローマ字)を使用
-          const romaji = romajiPatterns[0];
-
-          // ローマ字の各文字を順番に処理
-          for (let i = 0; i < romaji.length; i++) {
-            const char = romaji[i];
-            if (/^[a-z0-9\-]$/.test(char)) {
-              Game.processInput(char);
+          if (romajiPatterns && romajiPatterns.length > 0) {
+            const romaji = romajiPatterns[0];
+            for (let i = 0; i < romaji.length; i++) {
+              const char = romaji[i];
+              if (/^[a-z0-9\-]$/.test(char)) {
+                Game.processInput(char);
+              }
             }
           }
         }
@@ -869,7 +917,7 @@
 
       <div id="score-rule">
         SCORE = (LEN x {CONFIG.BASE_SCORE_PER_CHAR}) x (1 + COMBO x {Math.round(
-          CONFIG.COMBO_MULTIPLIER * 100
+          CONFIG.COMBO_MULTIPLIER * 100,
         )}%) + [PERFECT: {CONFIG.PERFECT_SCORE_BONUS}]
       </div>
 
@@ -1137,6 +1185,9 @@
         spellcheck="false"
         bind:this={hiddenInputEl}
         on:input={handleHiddenInput}
+        on:compositionstart={handleCompositionStart}
+        on:compositionupdate={handleCompositionUpdate}
+        on:compositionend={handleCompositionEnd}
       />
     </div>
   </div>
