@@ -814,13 +814,22 @@
 
   let compositionText = "";
   let isComposing = false;
-  let autoConfirmed = false; // 自動確定したかどうかのフラグ
+
+  // 特殊文字(濁音、半濁音、拗音、小文字)かどうかを判定
+  function isSpecialChar(char: string): boolean {
+    // 濁音: が ぎ ぐ げ ご ざ じ ず ぜ ぞ だ ぢ づ で ど ば び ぶ べ ぼ
+    // 半濁音: ぱ ぴ ぷ ぺ ぽ
+    // 拗音: きゃ きゅ きょ しゃ しゅ しょ ちゃ ちゅ ちょ にゃ にゅ にょ ひゃ ひゅ ひょ みゃ みゅ みょ りゃ りゅ りょ ぎゃ ぎゅ ぎょ じゃ じゅ じょ びゃ びゅ びょ ぴゃ ぴゅ ぴょ
+    // 小文字: ぁ ぃ ぅ ぇ ぉ っ ゃ ゅ ょ ゎ
+    const specialChars =
+      /[がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽぁぃぅぇぉっゃゅょゎ]|[きしちにひみりぎじびぴ][ゃゅょ]/;
+    return specialChars.test(char);
+  }
 
   function handleCompositionStart(e: CompositionEvent) {
     isComposing = true;
     compositionText = "";
-    composingText = ""; // UI表示用
-    autoConfirmed = false;
+    composingText = "";
   }
 
   function handleCompositionUpdate(e: CompositionEvent) {
@@ -831,86 +840,57 @@
     }
 
     const inputText = e.data || "";
-
-    // 前回の自動確定後、新しい入力が始まった場合はフラグをリセット
-    if (autoConfirmed && inputText) {
-      autoConfirmed = false;
-    }
-
     compositionText = inputText;
-    composingText = inputText; // UI表示用
 
-    // 入力中の文字が目標の文字と一致したら即座に確定
-    if (inputText && currentWord && tokenIndex < currentWord.tokens.length) {
+    // 特殊文字のみcomposingTextに表示
+    if (currentWord && tokenIndex < currentWord.tokens.length) {
       const targetToken = currentWord.tokens[tokenIndex];
 
-      // 入力テキスト全体をチェック(拗音対応: 「しょ」「きゃ」など)
-      // 入力テキストの中に目標のトークンが含まれているかチェック
-      if (inputText === targetToken || inputText.endsWith(targetToken)) {
-        // 一致! 即座に処理
-        autoConfirmed = true;
-        compositionText = "";
-        composingText = "";
+      // 目標が特殊文字の場合のみ表示
+      if (isSpecialChar(targetToken)) {
+        composingText = inputText;
 
-        Game.processFlickInput(targetToken);
-
-        // 入力をクリア
-        const target = e.target as HTMLInputElement;
-        if (target) {
-          target.value = "";
-        }
-
-        // 次のフレームでcomposingTextを再度クリア(確実にUI更新)
-        setTimeout(() => {
+        // 一致したら即座に処理
+        if (inputText === targetToken || inputText.endsWith(targetToken)) {
+          Game.processFlickInput(targetToken);
           composingText = "";
-        }, 0);
+          compositionText = "";
+
+          const target = e.target as HTMLInputElement;
+          if (target) target.value = "";
+        }
+      } else {
+        // 基本文字の場合は表示しない(inputイベントで処理)
+        composingText = "";
       }
     }
   }
 
   function handleCompositionEnd(e: CompositionEvent) {
-    // 自動確定済みの場合は何もしない(最優先チェック)
-    if (autoConfirmed) {
-      autoConfirmed = false;
-      isComposing = false;
-      compositionText = "";
-      composingText = "";
+    isComposing = false;
+    compositionText = "";
+    composingText = "";
+
+    if (!isPlaying || inputMode !== "flick") {
       const target = e.target as HTMLInputElement;
       if (target) target.value = "";
       return;
     }
 
-    if (!isPlaying) {
-      isComposing = false;
-      compositionText = "";
-      composingText = "";
-      return;
-    }
-
+    // エンターで確定された場合のミス判定
     const finalText = e.data || compositionText;
-    isComposing = false;
-    compositionText = "";
-    composingText = ""; // UI表示用クリア
+    if (finalText && currentWord && tokenIndex < currentWord.tokens.length) {
+      const targetToken = currentWord.tokens[tokenIndex];
 
-    if (finalText && inputMode === "flick") {
-      // エンターキーで確定された場合
-      // 最後の文字をチェックしてミス判定
-      const lastChar = finalText.slice(-1);
-
-      if (currentWord && tokenIndex < currentWord.tokens.length) {
-        const targetToken = currentWord.tokens[tokenIndex];
-
-        if (lastChar !== targetToken) {
-          // ミス判定
+      // 特殊文字でない場合、または不一致の場合はミス
+      if (!isSpecialChar(targetToken) || finalText !== targetToken) {
+        // ただし、既に処理済みの場合はスキップ
+        if (finalText !== targetToken) {
           Game.inputError();
-        } else {
-          // 一致(念のため処理)
-          Game.processFlickInput(lastChar);
         }
       }
     }
 
-    // Clear input
     const target = e.target as HTMLInputElement;
     if (target) target.value = "";
   }
@@ -918,32 +898,34 @@
   function handleHiddenInput(e: Event) {
     if (!isPlaying) return;
 
-    // フリック入力モードでIME変換中は何もしない
-    if (inputMode === "flick" && isComposing) {
-      return;
-    }
-
     const target = e.target as HTMLInputElement;
     const val = target.value;
 
     if (val.length > 0) {
       if (inputMode === "flick") {
-        // フリック入力はcompositionendで処理するため、ここでは何もしない
-        // (compositionendが発火しない環境のフォールバック)
-        if (!isComposing) {
-          const hiragana = val.slice(-1);
-          const romajiPatterns = KanaEngine.table[hiragana];
+        // フリック入力モード
+        if (isComposing) {
+          // IME変換中は何もしない(compositionupdateで処理)
+          return;
+        }
 
-          if (romajiPatterns && romajiPatterns.length > 0) {
-            const romaji = romajiPatterns[0];
-            for (let i = 0; i < romaji.length; i++) {
-              const char = romaji[i];
-              if (/^[a-z0-9\-]$/.test(char)) {
-                Game.processInput(char);
-              }
+        // 変換なしで確定された文字(基本文字)を処理
+        const hiragana = val.slice(-1);
+
+        if (currentWord && tokenIndex < currentWord.tokens.length) {
+          const targetToken = currentWord.tokens[tokenIndex];
+
+          // 基本文字の場合は即座に判定
+          if (!isSpecialChar(targetToken)) {
+            if (hiragana === targetToken) {
+              Game.processFlickInput(hiragana);
+            } else {
+              Game.inputError();
             }
           }
+          // 特殊文字の場合はcompositionイベントで処理済み
         }
+
         target.value = "";
       } else {
         // 半角入力モード: 従来通りの処理
