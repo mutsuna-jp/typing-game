@@ -93,7 +93,7 @@
       freq: number,
       type: OscillatorType | string,
       duration: number,
-      vol: number,
+      vol: number
     ) {
       if (!this.ctx) return;
       const osc = this.ctx.createOscillator();
@@ -103,7 +103,7 @@
       gain.gain.setValueAtTime(vol, this.ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(
         0.01,
-        this.ctx.currentTime + duration,
+        this.ctx.currentTime + duration
       );
       osc.connect(gain);
       gain.connect(this.ctx.destination);
@@ -237,7 +237,7 @@
         const word = getNextWordSeeded(
           this.activeList,
           elapsedTime,
-          this.gamePRNG,
+          this.gamePRNG
         );
         return { ...word, tokens: KanaEngine.tokenize(word.kana) };
       }
@@ -379,7 +379,7 @@
             // Fallback: pick an object with numeric seed, or reconstruct
             const obj = gameObj.find(
               (el: any) =>
-                el && typeof el === "object" && typeof el.seed === "number",
+                el && typeof el === "object" && typeof el.seed === "number"
             );
             if (obj) {
               // If the object contains a numeric small 'gameId' (legacy), prefer string id if available
@@ -388,7 +388,7 @@
             } else {
               if (numSeed !== undefined) {
                 const possibleGameId = gameObj.find(
-                  (el: any) => typeof el === "string" || typeof el === "number",
+                  (el: any) => typeof el === "string" || typeof el === "number"
                 );
                 gameObj = {
                   gameId:
@@ -610,7 +610,7 @@
             gameId: currentGameId,
             userId,
             username,
-          }),
+          })
         );
 
         const response = await fetch("?/submitScore", {
@@ -661,7 +661,7 @@
           JSON.stringify({
             userId,
             username: newName,
-          }),
+          })
         );
 
         const response = await fetch("?/registerName", {
@@ -698,13 +698,13 @@
         transferInput.length !== 64
       ) {
         alert(
-          "Invalid Transfer ID. Must start with 'usr_' and be 64 characters.",
+          "Invalid Transfer ID. Must start with 'usr_' and be 64 characters."
         );
         return;
       }
       if (
         confirm(
-          "Importing this ID will overwrite your current progress. Continue?",
+          "Importing this ID will overwrite your current progress. Continue?"
         )
       ) {
         localStorage.setItem("typing_game_user_id", transferInput);
@@ -817,6 +817,24 @@
   function toggleInputMode() {
     inputMode = inputMode === "flick" ? "halfwidth" : "flick";
     localStorage.setItem("typing_game_input_mode", inputMode);
+
+    // Force mobile IME to update: blur and refocus the hidden input when focused.
+    // Some mobile browsers don't switch keyboard layout until focus changes.
+    if (hiddenInputEl) {
+      try {
+        if (document.activeElement === hiddenInputEl) {
+          hiddenInputEl.blur();
+          // Small delay to ensure the UA updates the keyboard layout
+          setTimeout(() => hiddenInputEl?.focus(), 60);
+        } else if (isPlaying) {
+          // If game is active, focus to ensure input receives input in the chosen mode
+          hiddenInputEl.focus();
+        }
+      } catch (e) {
+        // Ignore focus errors on unusual platforms
+        console.error("toggleInputMode focus error:", e);
+      }
+    }
   }
 </script>
 
@@ -851,7 +869,7 @@
 
       <div id="score-rule">
         SCORE = (LEN x {CONFIG.BASE_SCORE_PER_CHAR}) x (1 + COMBO x {Math.round(
-          CONFIG.COMBO_MULTIPLIER * 100,
+          CONFIG.COMBO_MULTIPLIER * 100
         )}%) + [PERFECT: {CONFIG.PERFECT_SCORE_BONUS}]
       </div>
 
@@ -1109,9 +1127,13 @@
       {/if}
 
       <input
-        type={inputMode === "flick" ? "text" : "password"}
+        type="text"
         id="hidden-input"
+        inputmode={inputMode === "flick" ? undefined : "text"}
+        lang={inputMode === "flick" ? "ja" : "en"}
         autocomplete="off"
+        autocorrect="off"
+        autocapitalize="none"
         spellcheck="false"
         bind:this={hiddenInputEl}
         on:input={handleHiddenInput}
