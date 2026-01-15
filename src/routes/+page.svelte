@@ -117,6 +117,7 @@
   };
 
   import { KanaEngine, parseWords } from "$lib/word-utils";
+import { base } from '$app/paths';
   /**
    * Word Manager
    * Handles word list storage, CSV loading, and difficulty scaling logic.
@@ -144,7 +145,7 @@
 
       // Try to load words from the static CSV file. If unavailable, fall back to empty list.
       try {
-        const res = await fetch("/words.csv");
+        const res = await fetch(`${base}/words.csv`);
         if (res.ok) {
           const text = await res.text();
           const { words, errors } = parseWords(text);
