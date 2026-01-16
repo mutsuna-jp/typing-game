@@ -818,13 +818,29 @@
 
     keydownHandler = (e: KeyboardEvent) => {
       if (!isPlaying) return;
+
+      // Handle common keys via keydown to prevent them reaching the input field (and triggering IME)
       let char = "";
-      if (e.code && e.code.startsWith("Key"))
+      if (e.code && e.code.startsWith("Key")) {
         char = e.code.slice(3).toLowerCase();
-      else if (e.code === "Minus") char = "-";
+      } else if (e.code === "Minus") {
+        char = "-";
+      } else if (
+        e.code &&
+        (e.code.startsWith("Digit") || e.code.startsWith("Numpad"))
+      ) {
+        // Handle numbers
+        const match = e.code.match(/\d$/);
+        if (match) char = match[0];
+      }
+
       if (char) {
-        e.preventDefault();
-        Game.processInput(char);
+        // Prevent default even in flick mode IF it's a standard key that could trigger IME on PC
+        // In flick mode (mobile), we usually let the OS handle it, but on PC we want to block it.
+        if (inputMode === "halfwidth" || !isMobile) {
+          e.preventDefault();
+          Game.processInput(char);
+        }
       }
     };
     document.addEventListener("keydown", keydownHandler);
@@ -878,10 +894,15 @@
   }
 
   function handleCompositionUpdate(e: CompositionEvent) {
-    if (!isPlaying || inputMode !== "flick") {
-      composingText = e.data || "";
+    if (!isPlaying) return;
+
+    if (inputMode !== "flick") {
+      // 半角入力モード時は、compositionイベントによる入力を無視する
+      // (type="password" で抑制されるはずだが、念のため)
       return;
     }
+
+    composingText = e.data || "";
 
     const inputText = e.data || "";
 
@@ -1279,11 +1300,11 @@
 
 <input
   class="visually-hidden"
-  type="text"
+  type={inputMode === "halfwidth" ? "password" : "text"}
   id="hidden-input"
   inputmode={inputMode === "flick" ? undefined : "text"}
   lang={inputMode === "flick" ? "ja" : "en"}
-  autocomplete="off"
+  autocomplete={inputMode === "halfwidth" ? "new-password" : "off"}
   autocorrect="off"
   autocapitalize="none"
   spellcheck="false"
