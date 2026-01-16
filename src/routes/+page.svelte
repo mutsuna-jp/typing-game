@@ -22,6 +22,14 @@
   let fileStatus = $state("");
   let isFileError = $state(false);
   let isMobile = $state(false);
+  let topInputMode = $state<"flick" | "halfwidth">("flick");
+
+  function toggleTopInputMode() {
+    const next = topInputMode === "flick" ? "halfwidth" : "flick";
+    topInputMode = next;
+    localStorage.setItem("typing_game_input_mode", next);
+    message.set(`MODE: ${next === "flick" ? "FLICK" : "HALFWIDTH"}`);
+  }
 
   // Derived values from props
   let top5 = $derived(data.top5);
@@ -106,6 +114,15 @@
     username = localStorage.getItem("typing_game_username") || "guest";
     userId = localStorage.getItem("typing_game_user_id") || data.userId || "";
 
+    // Initialize input mode preference (used by /play). Show mobile default as 'flick'.
+    const savedMode = localStorage.getItem("typing_game_input_mode");
+    if (isMobile) {
+      if (savedMode === "flick" || savedMode === "halfwidth")
+        topInputMode = savedMode;
+    } else {
+      topInputMode = "halfwidth";
+    }
+
     if (!userId) {
       const chars =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -158,6 +175,12 @@
         style="display:none"
         onchange={handleFile}
       />
+
+      {#if isMobile}
+        <Button class="small subtle" onclick={toggleTopInputMode}>
+          MODE: {topInputMode === "flick" ? "FLICK" : "HALFWIDTH"}
+        </Button>
+      {/if}
     </div>
 
     <div
