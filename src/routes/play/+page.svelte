@@ -190,48 +190,28 @@
     }
 
     const targetToken = $currentWord.tokens[$tokenIndex];
+    const isSpecial = isSpecialChar(targetToken);
     const target = e.target as HTMLInputElement;
 
-    // 完全一致 → 確定
-    if (inputText === targetToken) {
+    // 特殊文字の場合のみcomposingTextに表示
+    if (isSpecial) {
+      composingText = inputText;
+    } else {
+      composingText = "";
+    }
+
+    // 一致判定: 完全一致 または 末尾一致（「し」→「しゃ」対応）
+    if (inputText === targetToken || inputText.endsWith(targetToken)) {
+      // 一致! 即座に処理
       Game.processFlickInput(targetToken);
       clearComposingState(target);
-      return;
-    }
-
-    // 部分一致 → 入力継続を許可（2段階入力対応）
-    if (targetToken.startsWith(inputText)) {
-      // 何もしない（入力継続）
-      return;
-    }
-
-    // 小文字系の特殊ケース（「つ」→「っ」など）
-    // 小文字への変換途中を許可
-    const smallKanaMap: Record<string, string[]> = {
-      っ: ["つ"],
-      ゃ: ["や"],
-      ゅ: ["ゆ"],
-      ょ: ["よ"],
-      ぁ: ["あ"],
-      ぃ: ["い"],
-      ぅ: ["う"],
-      ぇ: ["え"],
-      ぉ: ["お"],
-      ゎ: ["わ"],
-    };
-
-    if (smallKanaMap[targetToken]) {
-      const validSources = smallKanaMap[targetToken];
-      if (validSources.includes(inputText)) {
-        // 大文字から小文字への変換途中として許可
-        return;
+    } else if (!isSpecial && inputText.length > 0) {
+      // 基本文字で不一致の場合、1文字入力された時点でミス判定
+      const inputChar = inputText.slice(-1);
+      if (inputChar !== targetToken) {
+        Game.inputError();
+        clearComposingState(target);
       }
-    }
-
-    // 不一致 → エラー
-    if (inputText.length > 0) {
-      Game.inputError();
-      clearComposingState(target);
     }
   }
 
