@@ -1,5 +1,7 @@
 <script lang="ts">
   import { KanaEngine } from "$lib/word-utils";
+  import { fade, scale } from "svelte/transition";
+  import { quintOut } from "svelte/easing";
 
   export let currentWord: { disp: string; tokens: string[] } | null = null;
   export let tokenIndex: number = 0;
@@ -21,34 +23,41 @@
 
 <div class="word-container">
   {#if currentWord}
-    <div class="kanji-display">{currentWord.disp}</div>
-    <div class="word-display">
-      {#each currentWord.tokens as token, i}
-        <span
-          class="char"
-          class:correct={i < tokenIndex}
-          class:current={i === tokenIndex}
-          class:wrong={i === errorIndex}
-        >
-          {token}
-        </span>
-      {/each}
-    </div>
-    <div class="romaji-display">
-      {#if inputMode === "flick"}
-        {#if composingText}
-          <span class="composing-text">{composingText}</span>
-        {:else if currentWord.tokens[tokenIndex]}
-          <span class="hint-text">{currentWord.tokens[tokenIndex]}</span>
-        {/if}
-      {:else if hint}
-        <span class="input-buffer">{inputBuffer}</span>{hint.substring(
-          inputBuffer.length,
-        )}
-      {/if}
-    </div>
+    {#key currentWord.disp}
+      <div
+        class="game-content"
+        in:scale={{ duration: 400, start: 0.5, easing: quintOut }}
+      >
+        <div class="kanji-display">{currentWord.disp}</div>
+        <div class="word-display">
+          {#each currentWord.tokens as token, i}
+            <span
+              class="char"
+              class:correct={i < tokenIndex}
+              class:current={i === tokenIndex}
+              class:wrong={i === errorIndex}
+            >
+              {token}
+            </span>
+          {/each}
+        </div>
+        <div class="romaji-display">
+          {#if inputMode === "flick"}
+            {#if composingText}
+              <span class="composing-text">{composingText}</span>
+            {:else if currentWord.tokens[tokenIndex]}
+              <span class="hint-text">{currentWord.tokens[tokenIndex]}</span>
+            {/if}
+          {:else if hint}
+            <span class="input-buffer">{inputBuffer}</span>{hint.substring(
+              inputBuffer.length
+            )}
+          {/if}
+        </div>
+      </div>
+    {/key}
   {:else}
-    <div class="word-display">READY?</div>
+    <div class="word-display ready-text">READY?</div>
   {/if}
 </div>
 
@@ -163,5 +172,17 @@
       margin-top: 5px;
       letter-spacing: 1px;
     }
+
+    .ready-text {
+      font-size: 3rem !important;
+      color: oklch(60% 0.01 250);
+    }
+  }
+
+  .ready-text {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: oklch(60% 0.01 250);
+    opacity: 0.9;
   }
 </style>

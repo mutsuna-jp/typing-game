@@ -15,11 +15,20 @@
   export let isSubmitted: boolean = false;
   // Optional callback prop to avoid using `on:` event syntax in parent
   export let onsubmit: ((e: any) => void) | undefined = undefined;
+  // Optional retry callback prop
+  export let onretry: ((e?: any) => void) | undefined = undefined;
 
   import { base } from "$app/paths";
   const dispatch = createEventDispatcher();
 
   let inputName = currentUsername || "";
+
+  function handleRetry(e?: Event) {
+    if (e && typeof (e as Event).preventDefault === "function")
+      (e as Event).preventDefault();
+    dispatch("retry");
+    if (onretry) onretry();
+  }
 
   const RANKS = {
     S: { score: 1500, label: "S", color: "rank-S" },
@@ -104,6 +113,9 @@
 
   <div class="nav-links">
     <a href="{base}/" class="nav-link">BACK TO TOP</a>
+    <button class="nav-link" onclick={handleRetry} aria-label="Retry (R)"
+      >RETRY (R)</button
+    >
     <a href="{base}/rankings" class="nav-link">VIEW RANKINGS</a>
   </div>
 </div>
@@ -122,6 +134,11 @@
     letter-spacing: 0.1rem;
     border-bottom: 1px solid transparent;
     transition: all 0.2s;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
   }
 
   .nav-link:hover {

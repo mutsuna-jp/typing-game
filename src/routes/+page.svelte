@@ -89,7 +89,7 @@
     }
     if (
       confirm(
-        "Importing this ID will overwrite your current progress. Continue?",
+        "Importing this ID will overwrite your current progress. Continue?"
       )
     ) {
       localStorage.setItem("typing_game_user_id", transferInput);
@@ -100,7 +100,7 @@
   onMount(() => {
     isMobile =
       /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent,
+        navigator.userAgent
       ) || window.matchMedia("(max-width: 768px)").matches;
 
     username = localStorage.getItem("typing_game_username") || "guest";

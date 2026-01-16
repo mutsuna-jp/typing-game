@@ -1,7 +1,12 @@
 import { writable, get } from "svelte/store";
 import { isPlaying, isShaking } from "$lib/stores";
 import { AudioEngine } from "./AudioEngine";
-import { WordManager, wordActiveList, isCustomCSVStore, wordLastErrors } from "./WordManager";
+import {
+  WordManager,
+  wordActiveList,
+  isCustomCSVStore,
+  wordLastErrors,
+} from "./WordManager";
 import { KanaEngine, type Word } from "$lib/word-utils";
 
 // Types
@@ -39,7 +44,6 @@ export const gameStats = writable<GameStats | null>(null);
 export const scoreBonuses = writable<Bonus[]>([]);
 export const timeBonuses = writable<Bonus[]>([]);
 export const message = writable("PRESS START OR LOAD CSV");
-export const countdown = writable<number | string | null>(null);
 export const isPreparing = writable(false);
 
 let bonusCounter = 0;
@@ -72,8 +76,7 @@ export class GameEngineClass {
     if (
       get(wordActiveList).length === 0 ||
       get(isPreparing) ||
-      get(isPlaying) ||
-      get(countdown) !== null
+      get(isPlaying)
     ) {
       if (get(wordActiveList).length === 0) {
         message.set("LOAD CSV TO START");
@@ -102,7 +105,10 @@ export class GameEngineClass {
       let gameObj: any = result;
       if (result?.data) {
         try {
-          gameObj = typeof result.data === "string" ? JSON.parse(result.data) : result.data;
+          gameObj =
+            typeof result.data === "string"
+              ? JSON.parse(result.data)
+              : result.data;
         } catch {
           gameObj = result.data;
         }
@@ -114,7 +120,10 @@ export class GameEngineClass {
         if (strId && numSeed !== undefined) {
           gameObj = { gameId: strId, seed: numSeed };
         } else {
-          const obj = gameObj.find((el: any) => el && typeof el === "object" && typeof el.seed === "number");
+          const obj = gameObj.find(
+            (el: any) =>
+              el && typeof el === "object" && typeof el.seed === "number"
+          );
           if (obj) {
             if (!obj.gameId && strId) obj.gameId = strId;
             gameObj = obj;
@@ -125,7 +134,8 @@ export class GameEngineClass {
         }
       }
 
-      this.currentGameId = gameObj?.gameId != null ? String(gameObj.gameId) : null;
+      this.currentGameId =
+        gameObj?.gameId != null ? String(gameObj.gameId) : null;
       if (typeof gameObj?.seed === "number") WordManager.setSeed(gameObj.seed);
     } catch (e) {
       console.error("Session error:", e);
@@ -134,26 +144,15 @@ export class GameEngineClass {
       return;
     }
 
-    // Start countdown
-    setTimeout(async () => {
-      for (let i = 3; i > 0; i--) {
-        countdown.set(i);
-        AudioEngine.playBeep(800, 0.1);
-        await new Promise((r) => setTimeout(r, 800));
-      }
-      countdown.set("GO!");
-      AudioEngine.playBeep(1200, 0.3);
-      await new Promise((r) => setTimeout(r, 500));
-      countdown.set(null);
-      isPreparing.set(false);
+    // Start immediately (countdown feature removed)
+    isPreparing.set(false);
 
-      this.nextWord();
-      isPlaying.set(true);
-      if (this.timerId) clearInterval(this.timerId);
-      this.timerId = setInterval(() => this.tick(), 1000);
-      hiddenInputEl?.focus();
-      message.set("");
-    }, 800);
+    this.nextWord();
+    isPlaying.set(true);
+    if (this.timerId) clearInterval(this.timerId);
+    this.timerId = setInterval(() => this.tick(), 1000);
+    hiddenInputEl?.focus();
+    message.set("");
   }
 
   resetState() {
@@ -310,7 +309,9 @@ export class GameEngineClass {
     if (!this.hasErrorInWord) {
       const timeBonusValue = Math.max(1, Math.floor(wordLength / 2));
       const prevTime = get(timeLeft);
-      timeLeft.update((t) => Math.min(this.CONFIG.MAX_TIME, t + timeBonusValue));
+      timeLeft.update((t) =>
+        Math.min(this.CONFIG.MAX_TIME, t + timeBonusValue)
+      );
       const actualBonus = get(timeLeft) - prevTime;
 
       if (actualBonus > 0) {
@@ -337,7 +338,8 @@ export class GameEngineClass {
     else timeBonuses.update((b) => [...b, bonus]);
 
     setTimeout(() => {
-      if (target === "score") scoreBonuses.update((b) => b.filter((x) => x.id !== id));
+      if (target === "score")
+        scoreBonuses.update((b) => b.filter((x) => x.id !== id));
       else timeBonuses.update((b) => b.filter((x) => x.id !== id));
     }, 1000);
   }
@@ -352,7 +354,8 @@ export class GameEngineClass {
     AudioEngine.playGameOver();
 
     const total = this.correctKeys + this.wrongKeys;
-    const accuracy = total === 0 ? "0" : ((this.correctKeys / total) * 100).toFixed(1);
+    const accuracy =
+      total === 0 ? "0" : ((this.correctKeys / total) * 100).toFixed(1);
     const duration = (Date.now() - this.startTime) / 1000;
     const kpmValue = Math.round((this.correctKeys / duration) * 60);
 

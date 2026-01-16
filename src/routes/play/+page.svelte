@@ -31,7 +31,6 @@
     scoreBonuses,
     timeBonuses,
     message,
-    countdown,
   } from "$lib/engine/GameEngine";
   import { isPlaying, isShaking } from "$lib/stores";
   import { GAME_CONFIG } from "$lib/word-utils";
@@ -100,7 +99,7 @@
   onMount(() => {
     isMobile =
       /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent
+        navigator.userAgent,
       ) || window.matchMedia("(max-width: 768px)").matches;
 
     username = localStorage.getItem("typing_game_username") || "guest";
@@ -115,17 +114,28 @@
 
     WordManager.init(data.words);
 
-    // Start the game automatically or wait for interaction?
-    // According to original code, it waited for Enter or Start button.
-    // We'll keep that behavior but allow the Start button to be clear.
+    // Auto-start the game when the page loads
+    setTimeout(() => {
+      if (hiddenInputEl) {
+        Game.start(fetch, data, hiddenInputEl, `${base}/play`);
+      }
+    }, 100);
 
     const clickHandler = () => {
       if ($isPlaying) hiddenInputEl?.focus();
     };
     document.addEventListener("click", clickHandler);
 
+    const keydownHandler = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === "r" && !$isPlaying && $gameStats) {
+        Game.start(fetch, data, hiddenInputEl, `${base}/play`);
+      }
+    };
+    window.addEventListener("keydown", keydownHandler);
+
     return () => {
       document.removeEventListener("click", clickHandler);
+      window.removeEventListener("keydown", keydownHandler);
       Game.resetState();
     };
   });
@@ -230,7 +240,7 @@
 
   <h1 id="title">TYPEING</h1>
 
-  {#if $isPlaying || $gameStats}
+  {#if $isPlaying}
     <div class="info-bar">
       <div id="score-display-container">
         <span id="score-display">
@@ -259,10 +269,10 @@
     </div>
   {/if}
 
-  {#if !$isPlaying}
+  {#if !$isPlaying && !$gameStats}
     <div id="score-rule">
       SCORE = (LEN x {CONFIG.BASE_SCORE_PER_CHAR}) x (1 + COMBO x {Math.round(
-        CONFIG.COMBO_MULTIPLIER * 100
+        CONFIG.COMBO_MULTIPLIER * 100,
       )}%) + [PERFECT: {CONFIG.PERFECT_SCORE_BONUS}]
     </div>
   {/if}
@@ -278,15 +288,8 @@
         isSubmitted={$message === "✓ SCORE VERIFIED" ||
           $message === "✓ FINISHED (CUSTOM LIST - OFFLINE)"}
         onsubmit={(e: any) => registerRanking(e.detail.username)}
+        on:retry={() => Game.start(fetch, data, hiddenInputEl, `${base}/play`)}
       />
-      <div class="retry-actions">
-        <Button
-          class="small subtle"
-          onclick={() => Game.start(fetch, data, hiddenInputEl, `${base}/play`)}
-          >RETRY (R)</Button
-        >
-        <Button class="subtle" onclick={() => goto(base)}>TOP PAGE</Button>
-      </div>
     </div>
   {:else}
     <div transition:fade={{ duration: 300 }}>
@@ -300,7 +303,7 @@
       />
     </div>
 
-    {#if !$isPlaying && $countdown === null}
+    {#if !$isPlaying}
       <div class="start-prompt">
         <Button
           class="large"
@@ -314,15 +317,6 @@
         {/if}
       </div>
     {/if}
-  {/if}
-
-  {#if $countdown !== null}
-    <div
-      class="countdown-overlay"
-      transition:scale={{ duration: 200, start: 2 }}
-    >
-      {$countdown}
-    </div>
   {/if}
 
   <div id="message">{$message}</div>
