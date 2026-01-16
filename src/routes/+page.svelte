@@ -38,6 +38,8 @@
 
   // Element refs
   let hiddenInputEl: HTMLInputElement | null = null;
+  let flickInputComponent: FlickInput | null = null;
+  let halfwidthInputComponent: HalfwidthInput | null = null;
   let screenEl: HTMLElement | null = null;
 
   import {
@@ -133,6 +135,8 @@
   import { replaceState } from "$app/navigation";
   import WordDisplay from "$lib/components/WordDisplay.svelte";
   import GameReport from "$lib/components/GameReport.svelte";
+  import FlickInput from "$lib/components/FlickInput.svelte";
+  import HalfwidthInput from "$lib/components/HalfwidthInput.svelte";
 
   // Reactive State
   let isPlaying = false;
@@ -783,12 +787,22 @@
       replaceState(url.toString(), {});
     }
     clickHandler = () => {
-      if (isPlaying) hiddenInputEl?.focus();
+      if (isPlaying) {
+        if (inputMode === "flick" && flickInputComponent) {
+          flickInputComponent.focus();
+        } else if (inputMode === "halfwidth" && halfwidthInputComponent) {
+          halfwidthInputComponent.focus();
+        }
+      }
     };
     document.addEventListener("click", clickHandler);
 
+    // Keydown handler is now managed by HalfwidthInput component (via svelte:window)
+    // Global handler kept for backward compatibility with desktop keyboard input
     keydownHandler = (e: KeyboardEvent) => {
-      if (!isPlaying) return;
+      // When using HalfwidthInput component, it already handles key events via svelte:window.
+      // Ignore here to avoid duplicate calls that cause both correct and error to fire.
+      if (!isPlaying || inputMode === "halfwidth") return;
       let char = "";
       if (e.code && e.code.startsWith("Key"))
         char = e.code.slice(3).toLowerCase();
@@ -812,144 +826,32 @@
     }
   });
 
-  let isComposing = false;
-
-  // 特殊文字(濁音、半濁音、拗音、小文字)かどうかを判定
-  function isSpecialChar(char: string): boolean {
-    // 濁音: が ぎ ぐ げ ご ざ じ ず ぜ ぞ だ ぢ づ で ど ば び ぶ べ ぼ
-    // 半濁音: ぱ ぴ ぷ ぺ ぽ
-    // 拗音: きゃ きゅ きょ しゃ しゅ しょ ちゃ ちゅ ちょ にゃ にゅ にょ ひゃ ひゅ ひょ みゃ みゅ みょ りゃ りゅ りょ ぎゃ ぎゅ ぎょ じゃ じゅ じょ びゃ びゅ びょ ぴゃ ぴゅ ぴょ
-    // 小文字: ぁ ぃ ぅ ぇ ぉ っ ゃ ゅ ょ ゎ
-    const specialChars =
-      /[がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽぁぃぅぇぉっゃゅょゎ]|[きしちにひみりぎじびぴ][ゃゅょ]/;
-    return specialChars.test(char);
+  function handleFlickInputCorrect(e: CustomEvent<{ key: string }>) {
+    Game.processFlickInput(e.detail.key);
   }
 
-  function handleCompositionStart(e: CompositionEvent) {
-    isComposing = true;
-    composingText = "";
+  function handleFlickInputError() {
+    Game.inputError();
   }
 
-  // IME を確定させて、入力フィールドと composingText をリセット
-  function clearComposingState(target: HTMLInputElement | null) {
-    isComposing = false;
-    composingText = "";
-
-    if (target) {
-      // 入力フィールドをクリア
-      target.value = "";
-      // compositionend イベントを手動で発火させて IME に確定させる
-      const endEvent = new CompositionEvent("compositionend", {
-        bubbles: true,
-        cancelable: true,
-        data: "",
-      });
-      target.dispatchEvent(endEvent);
-    }
-  }
-
-  function handleCompositionUpdate(e: CompositionEvent) {
-    if (!isPlaying || inputMode !== "flick") {
-      composingText = e.data || "";
-      return;
-    }
-
-    const inputText = e.data || "";
-
-    if (!currentWord || tokenIndex >= currentWord.tokens.length) {
-      composingText = "";
-      return;
-    }
-
-    const targetToken = currentWord.tokens[tokenIndex];
-    const isSpecial = isSpecialChar(targetToken);
-
-    // 入力を常に表示（特殊文字か基本文字かに関わらず）
-    composingText = inputText;
-
-    const target = e.target as HTMLInputElement;
-
-    // 一致判定
-    if (inputText === targetToken || inputText.endsWith(targetToken)) {
-      // 一致! 即座に処理
-      Game.processFlickInput(targetToken);
-      clearComposingState(target);
-    } else if (!isSpecial && inputText.length > 0) {
-      // 基本文字で不一致の場合、1文字入力された時点でミス判定
-      const inputChar = inputText.slice(-1);
-      if (inputChar !== targetToken) {
-        Game.inputError();
-        clearComposingState(target);
-      }
-    }
-  }
-
-  function handleCompositionEnd(e: CompositionEvent) {
-    const target = e.target as HTMLInputElement;
-
-    if (!isPlaying || inputMode !== "flick") {
-      clearComposingState(target);
-      return;
-    }
-
-    // エンターで確定された場合のミス判定
-    const finalText = e.data || composingText;
-    if (finalText && currentWord && tokenIndex < currentWord.tokens.length) {
-      const targetToken = currentWord.tokens[tokenIndex];
-
-      // 特殊文字でない場合、または不一致の場合はミス
-      if (!isSpecialChar(targetToken) || finalText !== targetToken) {
-        // ただし、既に処理済みの場合はスキップ
-        if (finalText !== targetToken) {
-          Game.inputError();
-        }
-      }
-    }
-
-    clearComposingState(target);
-  }
-
-  function handleHiddenInput(e: Event) {
-    if (!isPlaying) return;
-
-    const target = e.target as HTMLInputElement;
-    const val = target.value;
-
-    if (val.length > 0) {
-      if (inputMode === "flick") {
-        // フリック入力はcompositionイベントで処理
-        // composition イベントが発火していない場合のクリア
-        if (!isComposing) {
-          composingText = "";
-          target.value = "";
-        }
-      } else {
-        // 半角入力モード: 従来通りの処理
-        const char = val.slice(-1).toLowerCase();
-        if (/^[a-z0-9\-]$/.test(char)) Game.processInput(char);
-        target.value = "";
-      }
-    } else if (inputMode === "flick" && isComposing === false) {
-      // フリック入力で val が空の場合は composingText もクリア
-      composingText = "";
-    }
+  function handleHalfwidthInputCorrect(e: CustomEvent<{ key: string }>) {
+    Game.processInput(e.detail.key);
   }
 
   function toggleInputMode() {
     inputMode = inputMode === "flick" ? "halfwidth" : "flick";
     localStorage.setItem("typing_game_input_mode", inputMode);
 
-    // Force mobile IME to update: blur and refocus the hidden input when focused.
+    // Force mobile IME to update: blur and refocus the input component when focused.
     // Some mobile browsers don't switch keyboard layout until focus changes.
-    if (hiddenInputEl) {
+    const activeComponent =
+      inputMode === "flick" ? flickInputComponent : halfwidthInputComponent;
+    if (activeComponent) {
       try {
-        if (document.activeElement === hiddenInputEl) {
-          hiddenInputEl.blur();
+        if (isPlaying) {
+          activeComponent.focus();
           // Small delay to ensure the UA updates the keyboard layout
-          setTimeout(() => hiddenInputEl?.focus(), 60);
-        } else if (isPlaying) {
-          // If game is active, focus to ensure input receives input in the chosen mode
-          hiddenInputEl.focus();
+          setTimeout(() => activeComponent?.focus(), 60);
         }
       } catch (e) {
         // Ignore focus errors on unusual platforms
@@ -1254,21 +1156,23 @@
         </div>
       {/if}
 
-      <input
-        type="text"
-        id="hidden-input"
-        inputmode={inputMode === "flick" ? undefined : "text"}
-        lang={inputMode === "flick" ? "ja" : "en"}
-        autocomplete="off"
-        autocorrect="off"
-        autocapitalize="none"
-        spellcheck="false"
-        bind:this={hiddenInputEl}
-        on:input={handleHiddenInput}
-        on:compositionstart={handleCompositionStart}
-        on:compositionupdate={handleCompositionUpdate}
-        on:compositionend={handleCompositionEnd}
-      />
+      {#if inputMode === "flick"}
+        <FlickInput
+          bind:this={flickInputComponent}
+          {isPlaying}
+          {currentWord}
+          {tokenIndex}
+          bind:composingText
+          on:correct={handleFlickInputCorrect}
+          on:error={handleFlickInputError}
+        />
+      {:else}
+        <HalfwidthInput
+          bind:this={halfwidthInputComponent}
+          {isPlaying}
+          on:correct={handleHalfwidthInputCorrect}
+        />
+      {/if}
     </div>
   </div>
 </div>
@@ -1304,7 +1208,6 @@
     border-radius: 50% / 10%;
     overflow: hidden;
     box-shadow: inset 0 0 100px oklch(0% 0 0 / 0.9);
-    border: 20px solid oklch(25% 0.02 250);
     transform: perspective(1000px) rotateX(1deg);
   }
   #screen::before {
@@ -1543,11 +1446,6 @@
     color: oklch(80% 0.2 160);
     min-height: 1.5rem;
     margin-bottom: 10px;
-  }
-  #hidden-input {
-    position: absolute;
-    opacity: 0;
-    top: -1000px;
   }
 
   @keyframes floatUp {

@@ -126,7 +126,10 @@ export const actions = {
       }
 
       // Delete the session token so it can't be reused
-      await db.prepare("DELETE FROM game_sessions WHERE id = ?").bind(gameId).run();
+      await db
+        .prepare("DELETE FROM game_sessions WHERE id = ?")
+        .bind(gameId)
+        .run();
 
       if (Date.now() > session.expires_at) {
         return fail(400, { message: "Session expired" });
@@ -289,7 +292,6 @@ export const actions = {
 
       // --- 5. D1 Integration: Save if Personal Best ---
       let isNewRecord = false;
-
 
       if (db && userId && userId.startsWith("usr_")) {
         // Use guest if username is empty

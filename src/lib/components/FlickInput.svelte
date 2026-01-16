@@ -6,7 +6,7 @@
   export let tokenIndex: number = 0;
 
   const dispatch = createEventDispatcher<{
-    correct: { char: string };
+    correct: { key: string };
     error: void;
   }>();
 
@@ -47,22 +47,31 @@
     const targetToken = currentWord.tokens[tokenIndex];
     const isSpecial = isSpecialChar(targetToken);
 
-    // 特殊文字の場合のみcomposingTextに表示
-    if (isSpecial) {
-      composingText = inputText;
-    } else {
-      composingText = "";
-    }
+    // 常に入力を表示（`+page.svelte` と合わせる）
+    composingText = inputText;
 
     // 一致判定
     if (inputText === targetToken || inputText.endsWith(targetToken)) {
       // 一致! 即座に処理
-      dispatch("correct", { char: targetToken });
+      dispatch("correct", { key: targetToken });
+      // finalize composing state so IME doesn't remain in composition
+      isComposing = false;
       composingText = "";
       compositionText = "";
 
       const target = e.target as HTMLInputElement;
-      if (target) target.value = "";
+      if (target) {
+        target.value = "";
+        // Try to notify the IME that composition ended (helps some mobile IMEs)
+        try {
+          const endEvent = new CompositionEvent("compositionend", {
+            data: targetToken,
+          });
+          target.dispatchEvent(endEvent);
+        } catch (err) {
+          // ignore if not supported
+        }
+      }
     } else if (!isSpecial && inputText.length > 0) {
       // 基本文字で不一致の場合、1文字入力された時点でミス判定
       const inputChar = inputText.slice(-1);
