@@ -100,7 +100,7 @@
   onMount(() => {
     isMobile =
       /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent,
+        navigator.userAgent
       ) || window.matchMedia("(max-width: 768px)").matches;
 
     username = localStorage.getItem("typing_game_username") || "guest";
@@ -233,7 +233,10 @@
   {#if $isPlaying || $gameStats}
     <div class="info-bar">
       <div id="score-display-container">
-        <span id="score-display">SCORE: {String($score).padStart(3, "0")}</span>
+        <span id="score-display">
+          <span class="label">SCORE</span><span class="sep">:</span>
+          <span class="value">{String($score).padStart(3, "0")}</span>
+        </span>
         {#each $scoreBonuses as bonus (bonus.id)}
           <span class="score-bonus {bonus.type}">{bonus.text}</span>
         {/each}
@@ -246,7 +249,8 @@
 
       <div id="time-display-container">
         <span id="time-display" class:low-time={$timeLeft < 10}>
-          TIME: {$timeLeft}
+          <span class="label">TIME</span><span class="sep">:</span>
+          <span class="value">{$timeLeft}</span>
         </span>
         {#each $timeBonuses as bonus (bonus.id)}
           <span class="time-bonus {bonus.type}">{bonus.text}</span>
@@ -255,11 +259,13 @@
     </div>
   {/if}
 
-  <div id="score-rule">
-    SCORE = (LEN x {CONFIG.BASE_SCORE_PER_CHAR}) x (1 + COMBO x {Math.round(
-      CONFIG.COMBO_MULTIPLIER * 100,
-    )}%) + [PERFECT: {CONFIG.PERFECT_SCORE_BONUS}]
-  </div>
+  {#if !$isPlaying}
+    <div id="score-rule">
+      SCORE = (LEN x {CONFIG.BASE_SCORE_PER_CHAR}) x (1 + COMBO x {Math.round(
+        CONFIG.COMBO_MULTIPLIER * 100
+      )}%) + [PERFECT: {CONFIG.PERFECT_SCORE_BONUS}]
+    </div>
+  {/if}
 
   {#if $gameStats}
     <div transition:fade={{ duration: 300 }}>
@@ -485,25 +491,61 @@
   @media (max-width: 600px) {
     .info-bar {
       padding: 0.8rem 0.5rem;
-      gap: 0.5rem;
+      gap: 0.75rem;
+      justify-content: center;
+      flex-wrap: nowrap;
     }
 
     #score-display,
     #time-display {
-      font-size: 1.4rem;
+      font-size: 1.1rem;
     }
 
     .combo-num {
-      font-size: 1.8rem;
+      font-size: 1.6rem;
     }
 
     .combo-label {
       font-size: 0.6rem;
     }
 
+    /* Keep each block compact and allow three blocks to sit horizontally */
     #score-display-container,
-    #time-display-container {
-      min-width: 100px;
+    #time-display-container,
+    #combo-display {
+      min-width: 70px;
+      width: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* On mobile hide colon/separator and show label above value */
+    #score-display,
+    #time-display {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.15rem;
+    }
+
+    #score-display .sep,
+    #time-display .sep {
+      display: none;
+    }
+
+    #score-display .label,
+    #time-display .label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      letter-spacing: 2px;
+    }
+
+    #score-display .value,
+    #time-display .value {
+      font-size: 1.2rem;
+      font-family: var(--font-mono);
     }
   }
 
