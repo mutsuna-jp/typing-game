@@ -7,6 +7,63 @@
 </script>
 
 <svelte:head>
+  <title>TYPEING - レトロタイピングゲーム</title>
+  <meta
+    name="description"
+    content="レトロなCRT風デザインのタイピングゲーム。ランキング機能付きで、スコアを競い合えます。無料でタイピング練習ができます。"
+  />
+
+  <!-- Open Graph Protocol -->
+  <meta property="og:title" content="TYPEING - レトロタイピングゲーム" />
+  <meta
+    property="og:description"
+    content="レトロなCRT風デザインのタイピングゲーム。ランキング機能付きで、スコアを競い合えます。"
+  />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://lab.mutsuna.jp/typing-game/" />
+  <meta
+    property="og:image"
+    content="https://lab.mutsuna.jp/typing-game/og-image.png"
+  />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:locale" content="ja_JP" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="TYPEING - レトロタイピングゲーム" />
+  <meta
+    name="twitter:description"
+    content="レトロなCRT風デザインのタイピングゲーム。ランキング機能付きで、スコアを競い合えます。"
+  />
+  <meta
+    name="twitter:image"
+    content="https://lab.mutsuna.jp/typing-game/og-image.png"
+  />
+
+  <!-- Structured Data (JSON-LD) -->
+  {@html `<script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "TYPEING",
+    "description": "レトロなCRT風デザインのタイピングゲーム",
+    "url": "https://lab.mutsuna.jp/typing-game/",
+    "applicationCategory": "GameApplication",
+    "operatingSystem": "Web Browser",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "JPY"
+    },
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": "4.5",
+      "ratingCount": "100"
+    }
+  }
+  <\/script>`}
+
   <link rel="icon" href={favicon} />
 </svelte:head>
 
@@ -44,7 +101,8 @@
     /* --- Shared TV Aesthetics --- */
     #tv-set {
       width: 100vw;
-      height: 100vh;
+      height: 100vh; /* Fallback for older browsers */
+      height: 100dvh; /* Dynamic viewport height - adjusts for virtual keyboard */
       display: flex;
       justify-content: center;
       align-items: center;

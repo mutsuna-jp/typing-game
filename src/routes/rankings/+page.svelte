@@ -8,6 +8,32 @@
   }
 </script>
 
+<svelte:head>
+  <title>ランキング - TYPEING</title>
+  <meta
+    name="description"
+    content="TYPEINGのオンラインランキング。トッププレイヤーのスコアとKPMをチェックしよう。"
+  />
+
+  <!-- Open Graph Protocol -->
+  <meta property="og:title" content="ランキング - TYPEING" />
+  <meta
+    property="og:description"
+    content="TYPEINGのオンラインランキング。トッププレイヤーのスコアをチェック。"
+  />
+  <meta
+    property="og:url"
+    content="https://lab.mutsuna.jp/typing-game/rankings"
+  />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:title" content="ランキング - TYPEING" />
+  <meta
+    name="twitter:description"
+    content="TYPEINGのオンラインランキング。トッププレイヤーのスコアをチェック。"
+  />
+</svelte:head>
+
 <div class="rankings-root">
   <div class="header">
     <h1>ONLINE RANKINGS</h1>

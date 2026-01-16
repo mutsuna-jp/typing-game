@@ -231,6 +231,11 @@
   }
 </script>
 
+<svelte:head>
+  <title>プレイ中 - TYPEING</title>
+  <meta name="robots" content="noindex, nofollow" />
+</svelte:head>
+
 <div class="game-container" class:shaking={$isShaking}>
   <div class="header-actions">
     <Button class="small subtle" onclick={() => goto(base)}
@@ -323,7 +328,8 @@
 
   <!-- Hidden Input for mobile/IME support -->
   <input
-    type={inputMode === "halfwidth" ? "password" : "text"}
+    type="text"
+    inputmode={inputMode === "halfwidth" ? "url" : "text"}
     id="hidden-input"
     bind:this={hiddenInputEl}
     oninput={handleHiddenInput}
