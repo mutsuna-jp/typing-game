@@ -20,6 +20,8 @@
   let compositionText = "";
   let isComposing = false;
   let processingComplete = false; // 判定完了フラグ
+  let compositionStartTime = 0; // 中間状態開始時刻（ミリ秒）
+  const COMPOSITION_TIMEOUT = 3000; // 中間状態を許容する最大時間（ミリ秒）
 
   export let composingText = ""; // UI表示用
 
@@ -75,11 +77,18 @@
     return specialChars.test(char);
   }
 
+  // 中間状態がタイムアウトしたかチェック（true = タイムアウト = 中間状態を許容しない）
+  function isCompositionTimedOut(): boolean {
+    const elapsedTime = Date.now() - compositionStartTime;
+    return elapsedTime > COMPOSITION_TIMEOUT;
+  }
+
   function handleCompositionStart(e: CompositionEvent) {
     isComposing = true;
     compositionText = "";
     composingText = "";
     processingComplete = false;
+    compositionStartTime = Date.now(); // 中間状態の開始時刻を記録
   }
 
   function handleCompositionUpdate(e: CompositionEvent) {
@@ -131,6 +140,10 @@
     } else if (isPalatal) {
       // 目標が拗音の場合：対応する基本文字 + 小さい文字のみ許容
       // ただし IME によっては中間状態で小文字のフルサイズ（例: 'よ'）や濁音の中間状態（例: 'び'）が入るため、それも許容する
+
+      // 中間状態タイムアウト確認：タイムアウト時は正確な入力のみを許容
+      const allowIntermediateStates = !isCompositionTimedOut();
+
       const baseChar = getPalaitalBaseChar(targetToken);
       const expectedSmall = targetToken[1];
       const fullToSmall: Record<string, string> = {
@@ -155,10 +168,22 @@
       if (inputText.length === 1) {
         // 基本文字だけ入力された場合は OK（小さい文字待ち）
         const baseRow = atokFlickRowMap[baseChar];
-        const okSingle =
-          inputText === baseChar ||
-          (intermediateVoiced && inputText === intermediateVoiced) ||
-          (baseRow && baseRow.includes(inputText));
+
+        // 濁音・半濁音の場合、その基本文字の行も許容
+        const voicedBaseChar = getBaseChar(baseChar);
+        const voicedBaseRow =
+          voicedBaseChar !== baseChar ? atokFlickRowMap[voicedBaseChar] : null;
+
+        let okSingle = inputText === baseChar;
+
+        if (!okSingle && allowIntermediateStates) {
+          okSingle =
+            (intermediateVoiced && inputText === intermediateVoiced) ||
+            (baseRow &&
+              (baseRow.includes(inputText) ||
+                baseRow.includes(getBaseChar(inputText))));
+        }
+
         if (!okSingle) {
           dispatch("error");
           processingComplete = true;
@@ -182,19 +207,28 @@
       } else if (inputText.length === 2) {
         // 2文字入力された場合：
         // ATOK フリック中間状態対応：
-        // - 第一文字が「基本文字の行内の任意の文字」（例: ちゃ狙いで たゃ が入力される）
+        // - 第一文字が「基本文字の行内の任意の文字」または「基本文字の基本行」
         // - 第二文字が「小文字系」（例: ゃ, ゅ, ょ または フルサイズ や, ゆ, よ）
         const firstChar = inputText[0];
         const secondChar = inputText[1];
         const secondIsSmallLike =
           isSmallChar(secondChar) || fullToSmall[secondChar] !== undefined;
 
-        // 第一文字チェック：基本文字、中間濁音、または基本文字の行内
+        // 第一文字チェック：基本文字、中間濁音、または基本文字の行内、または基本文字の基本行内
         const baseRow = atokFlickRowMap[baseChar];
-        const firstMatches =
-          firstChar === baseChar ||
-          (intermediateVoiced && firstChar === intermediateVoiced) ||
-          (baseRow && baseRow.includes(firstChar));
+        const voicedBaseChar = getBaseChar(baseChar);
+        const voicedBaseRow =
+          voicedBaseChar !== baseChar ? atokFlickRowMap[voicedBaseChar] : null;
+
+        let firstMatches = firstChar === baseChar;
+
+        if (!firstMatches && allowIntermediateStates) {
+          firstMatches =
+            (intermediateVoiced && firstChar === intermediateVoiced) ||
+            (baseRow &&
+              (baseRow.includes(firstChar) ||
+                baseRow.includes(getBaseChar(firstChar))));
+        }
 
         if (!firstMatches || !secondIsSmallLike) {
           // 明らかに異なる組み合わせはミス
@@ -241,6 +275,9 @@
       }
     } else if (isVoiced) {
       // 目標が濁音・半濁音の場合
+      // 中間状態タイムアウト確認：タイムアウト時は正確な入力のみを許容
+      const allowIntermediateStates = !isCompositionTimedOut();
+
       const baseChar = getBaseChar(targetToken);
       const isSemiVoiced = targetToken in semiToVoiced;
       const intermediateDevoiced = isSemiVoiced
@@ -250,11 +287,15 @@
       if (inputText.length > 0) {
         // 許容される入力：基本文字、（半濁音なら対応する濁音、目標文字）
         const baseRow = atokFlickRowMap[baseChar];
-        const isValid =
-          inputText === baseChar ||
-          inputText === targetToken ||
-          (intermediateDevoiced && inputText === intermediateDevoiced) ||
-          (baseRow && baseRow.includes(inputText));
+        let isValid = inputText === baseChar || inputText === targetToken;
+
+        if (!isValid && allowIntermediateStates) {
+          isValid =
+            (intermediateDevoiced && inputText === intermediateDevoiced) ||
+            (baseRow &&
+              (baseRow.includes(inputText) ||
+                baseRow.includes(getBaseChar(inputText))));
+        }
 
         if (!isValid) {
           // 許容外の入力 = ミス
@@ -323,6 +364,9 @@
       }
     } else {
       // 目標が基本文字の場合
+      // 中間状態タイムアウト確認：タイムアウト時は正確な入力のみを許容
+      const allowIntermediateStates = !isCompositionTimedOut();
+
       if (inputText === targetToken) {
         // 基本文字のみ、OK（濁点待ち）
       } else if (inputText.length > 1) {
@@ -352,8 +396,11 @@
         const inputInFlickRow =
           targetFlickRow && targetFlickRow.includes(inputText);
 
-        if (!inputInFlickRow) {
-          // フリック行に含まれないので、ミス
+        // 中間状態がタイムアウト時は、フリック行のメンバーも拒否
+        const isValidIntermediate = allowIntermediateStates && inputInFlickRow;
+
+        if (!isValidIntermediate) {
+          // フリック行に含まれないので、ミス（タイムアウト時も同様）
           dispatch("error");
           processingComplete = true;
           composingText = "";
