@@ -1,5 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
+  import {
+    voicedMap,
+    semiToVoiced,
+    palatalMap,
+    atokFlickRowMap,
+  } from "../word-utils";
 
   export let isPlaying: boolean = false;
   export let currentWord: { tokens: string[] } | null = null;
@@ -16,87 +22,6 @@
   let processingComplete = false; // 判定完了フラグ
 
   export let composingText = ""; // UI表示用
-
-  // 濁音・半濁音から基本文字へのマッピング
-  const voicedMap: Record<string, string> = {
-    が: "か",
-    ぎ: "き",
-    ぐ: "く",
-    げ: "け",
-    ご: "こ",
-    ぱ: "は",
-    ぴ: "ひ",
-    ぷ: "ふ",
-    ぺ: "へ",
-    ぽ: "ほ",
-    ざ: "さ",
-    じ: "し",
-    ず: "す",
-    ぜ: "せ",
-    ぞ: "そ",
-    だ: "た",
-    ぢ: "ち",
-    づ: "つ",
-    で: "て",
-    ど: "と",
-    ば: "は",
-    び: "ひ",
-    ぶ: "ふ",
-    べ: "へ",
-    ぼ: "ほ",
-  };
-
-  // 半濁音から対応する濁音へのマッピング（フリック変換の中間状態）
-  const semiToVoiced: Record<string, string> = {
-    ぱ: "ば",
-    ぴ: "び",
-    ぷ: "ぶ",
-    ぺ: "べ",
-    ぽ: "ぼ",
-  };
-
-  // 拗音から基本文字へのマッピング（濁音・半濁音版含む）
-  const palatalMap: Record<string, string> = {
-    きゃ: "き",
-    きゅ: "き",
-    きょ: "き",
-    しゃ: "し",
-    しゅ: "し",
-    しょ: "し",
-    ちゃ: "ち",
-    ちゅ: "ち",
-    ちょ: "ち",
-    にゃ: "に",
-    にゅ: "に",
-    にょ: "に",
-    ひゃ: "ひ",
-    ひゅ: "ひ",
-    ひょ: "ひ",
-    みゃ: "み",
-    みゅ: "み",
-    みょ: "み",
-    りゃ: "り",
-    りゅ: "り",
-    りょ: "り",
-    ぎゃ: "ぎ",
-    ぎゅ: "ぎ",
-    ぎょ: "ぎ",
-    じゃ: "じ",
-    じゅ: "じ",
-    じょ: "じ",
-    びゃ: "び",
-    びゅ: "び",
-    びょ: "び",
-    ぴゃ: "ぴ",
-    ぴゅ: "ぴ",
-    ぴょ: "ぴ",
-    てゃ: "て",
-    てゅ: "て",
-    てょ: "て",
-    でゃ: "で",
-    でゅ: "で",
-    でょ: "で",
-  };
 
   // 濁音・半濁音かどうかを判定
   function isVoicedCharacter(char: string): boolean {
@@ -139,8 +64,14 @@
 
   // 特殊文字(濁音、半濁音、拗音、小文字)かどうかを判定
   function isSpecialChar(char: string): boolean {
+    // 既存のマップや小文字集合で判定することで、複数文字（例: 'てぃ'）も正しく扱う
+    if (char in voicedMap) return true;
+    if (char in palatalMap) return true;
+    if (isSmallChar(char)) return true;
+
+    // フォールバックで単一文字の特殊文字をテスト
     const specialChars =
-      /[がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽぁぃぅぇぉっゃゅょゎ]|[きしちにひみりぎじびぴ][ゃゅょ]/;
+      /[がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽぁぃぅぇぉっゃゅょゎ]/;
     return specialChars.test(char);
   }
 
@@ -223,9 +154,11 @@
 
       if (inputText.length === 1) {
         // 基本文字だけ入力された場合は OK（小さい文字待ち）
+        const baseRow = atokFlickRowMap[baseChar];
         const okSingle =
           inputText === baseChar ||
-          (intermediateVoiced && inputText === intermediateVoiced);
+          (intermediateVoiced && inputText === intermediateVoiced) ||
+          (baseRow && baseRow.includes(inputText));
         if (!okSingle) {
           dispatch("error");
           processingComplete = true;
@@ -247,16 +180,24 @@
           }
         }
       } else if (inputText.length === 2) {
-        // 2文字入力された場合：基本文字/中間濁音 + 小さい文字（またはそのフルサイズ）をチェック
+        // 2文字入力された場合：
+        // ATOK フリック中間状態対応：
+        // - 第一文字が「基本文字の行内の任意の文字」（例: ちゃ狙いで たゃ が入力される）
+        // - 第二文字が「小文字系」（例: ゃ, ゅ, ょ または フルサイズ や, ゆ, よ）
         const firstChar = inputText[0];
         const secondChar = inputText[1];
-        const secondMatches =
-          secondChar === expectedSmall ||
-          fullToSmall[secondChar] === expectedSmall;
+        const secondIsSmallLike =
+          isSmallChar(secondChar) || fullToSmall[secondChar] !== undefined;
+
+        // 第一文字チェック：基本文字、中間濁音、または基本文字の行内
+        const baseRow = atokFlickRowMap[baseChar];
         const firstMatches =
           firstChar === baseChar ||
-          (intermediateVoiced && firstChar === intermediateVoiced);
-        if (!firstMatches || !secondMatches) {
+          (intermediateVoiced && firstChar === intermediateVoiced) ||
+          (baseRow && baseRow.includes(firstChar));
+
+        if (!firstMatches || !secondIsSmallLike) {
+          // 明らかに異なる組み合わせはミス
           dispatch("error");
           processingComplete = true;
           composingText = "";
@@ -276,6 +217,7 @@
             }
           }
         }
+        // 正確な小文字であれば earlier の "inputText === targetToken" 判定ですでに処理済みになる。
       } else if (inputText.length > 2) {
         // 3文字以上はミス
         dispatch("error");
@@ -307,10 +249,12 @@
 
       if (inputText.length > 0) {
         // 許容される入力：基本文字、（半濁音なら対応する濁音、目標文字）
+        const baseRow = atokFlickRowMap[baseChar];
         const isValid =
           inputText === baseChar ||
           inputText === targetToken ||
-          (intermediateDevoiced && inputText === intermediateDevoiced);
+          (intermediateDevoiced && inputText === intermediateDevoiced) ||
+          (baseRow && baseRow.includes(inputText));
 
         if (!isValid) {
           // 許容外の入力 = ミス
@@ -403,26 +347,34 @@
           }
         }
       } else if (inputText.length === 1 && inputText !== targetToken) {
-        // 1文字で不一致 = ミス
-        dispatch("error");
-        processingComplete = true;
-        composingText = "";
-        compositionText = "";
-        isComposing = false;
+        // 1文字で不一致の場合、ATOK フリック行の中間状態として許容するか判定
+        const targetFlickRow = atokFlickRowMap[targetToken];
+        const inputInFlickRow =
+          targetFlickRow && targetFlickRow.includes(inputText);
 
-        const target = e.target as HTMLInputElement;
-        if (target) {
-          target.value = "";
-          // 変換を確定して IME の状態をリセット
-          try {
-            const endEvent = new CompositionEvent("compositionend", {
-              data: inputText,
-            });
-            target.dispatchEvent(endEvent);
-          } catch (err) {
-            // ignore if not supported
+        if (!inputInFlickRow) {
+          // フリック行に含まれないので、ミス
+          dispatch("error");
+          processingComplete = true;
+          composingText = "";
+          compositionText = "";
+          isComposing = false;
+
+          const target = e.target as HTMLInputElement;
+          if (target) {
+            target.value = "";
+            // 変換を確定して IME の状態をリセット
+            try {
+              const endEvent = new CompositionEvent("compositionend", {
+                data: inputText,
+              });
+              target.dispatchEvent(endEvent);
+            } catch (err) {
+              // ignore if not supported
+            }
           }
         }
+        // inputInFlickRow が true の場合、何もしない（入力を許容）
       }
     }
   }

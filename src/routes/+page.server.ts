@@ -161,6 +161,34 @@ export const actions = {
       let keyIdx = 0;
       let totalTimeBonuses = 0;
 
+      // Detect input mode: if keys are hiragana, it's flick input
+      const isFlickMode = keyLog.some((k) => /^[\u3041-\u3096]+$/.test(k.key));
+
+      // Validate key format consistency
+      for (let i = 0; i < keyLog.length; i++) {
+        const key = keyLog[i].key;
+        const isHira = /^[\u3041-\u3096]+$/.test(key); // All hiragana
+        const isRoma = /^[a-z\-]$/.test(key); // Single roman char or hyphen
+
+        if (!isHira && !isRoma) {
+          return fail(400, {
+            message: `Invalid key format at index ${i}: "${key}"`,
+          });
+        }
+
+        // Ensure consistency: don't mix flick (hiragana) and halfwidth (roman) in one session
+        if (isFlickMode && isRoma) {
+          return fail(400, {
+            message: "Mixed input modes detected in keylog",
+          });
+        }
+        if (!isFlickMode && isHira) {
+          return fail(400, {
+            message: "Mixed input modes detected in keylog",
+          });
+        }
+      }
+
       for (let i = 0; i < playedWords.length; i++) {
         const clientWord = playedWords[i];
 
@@ -193,37 +221,63 @@ export const actions = {
         let tokenIndex = 0;
         let inputBuffer = "";
         let hasErrorInWord = false;
+        const wordStartKeyIdx = keyIdx;
 
         // Simulation: Process keys belonging to this word
         while (tokenIndex < tokens.length && keyIdx < keyLog.length) {
           const keyEntry = keyLog[keyIdx];
           const key = keyEntry.key;
-          keyIdx++;
 
-          const currToken = tokens[tokenIndex];
-          const nextToken = tokens[tokenIndex + 1];
-          const patterns = KanaEngine.getValidPatterns(currToken, nextToken);
-          const nextBuffer = inputBuffer + key;
+          let processedKey: string;
 
-          if (patterns.some((p) => p.startsWith(nextBuffer))) {
-            correctKeys++;
-            currentCombo++;
-            inputBuffer = nextBuffer;
+          if (isFlickMode) {
+            // Flick mode: key is hiragana, use it directly
+            processedKey = key;
+            keyIdx++;
 
-            const isMatch = patterns.includes(inputBuffer);
-            const isN_Ambiguity =
-              currToken === "ん" &&
-              inputBuffer === "n" &&
-              nextToken &&
-              /^[aiueoyn]/.test(KanaEngine.table[nextToken]?.[0]);
-
-            if (isMatch && !isN_Ambiguity) {
+            const currToken = tokens[tokenIndex];
+            if (currToken === processedKey) {
+              // Exact match - perfect flick input
+              correctKeys++;
+              currentCombo++;
               tokenIndex++;
               inputBuffer = "";
+            } else {
+              // Hiragana mismatch - wrong key
+              currentCombo = 0;
+              hasErrorInWord = true;
+              break; // Stop processing this word on error in flick mode
             }
           } else {
-            currentCombo = 0;
-            hasErrorInWord = true;
+            // Halfwidth mode: key is roman character, process as before
+            processedKey = key;
+            keyIdx++;
+
+            const currToken = tokens[tokenIndex];
+            const nextToken = tokens[tokenIndex + 1];
+            const patterns = KanaEngine.getValidPatterns(currToken, nextToken);
+            const nextBuffer = inputBuffer + processedKey;
+
+            if (patterns.some((p) => p.startsWith(nextBuffer))) {
+              correctKeys++;
+              currentCombo++;
+              inputBuffer = nextBuffer;
+
+              const isMatch = patterns.includes(inputBuffer);
+              const isN_Ambiguity =
+                currToken === "ん" &&
+                inputBuffer === "n" &&
+                nextToken &&
+                /^[aiueoyn]/.test(KanaEngine.table[nextToken]?.[0]);
+
+              if (isMatch && !isN_Ambiguity) {
+                tokenIndex++;
+                inputBuffer = "";
+              }
+            } else {
+              currentCombo = 0;
+              hasErrorInWord = true;
+            }
           }
         }
 
@@ -267,20 +321,60 @@ export const actions = {
         for (let i = 1; i < keyLog.length; i++) {
           intervals.push(keyLog[i].time - keyLog[i - 1].time);
         }
-        const avg = intervals.reduce((a, b) => a + b) / intervals.length;
-        const variance =
-          intervals.reduce((a, b) => a + Math.pow(b - avg, 2), 0) /
-          intervals.length;
 
-        if (variance < 2) {
-          return fail(400, {
-            message: "Bot detected: input intervals are too consistent",
-          });
+        // Filter out very small intervals (< 1ms) which are unrealistic
+        const validIntervals = intervals.filter((v) => v >= 1);
+
+        if (validIntervals.length > 10) {
+          const avg =
+            validIntervals.reduce((a, b) => a + b) / validIntervals.length;
+          const variance =
+            validIntervals.reduce((a, b) => a + Math.pow(b - avg, 2), 0) /
+            validIntervals.length;
+
+          // Variance should be > 2ms^2 for human input (too consistent = bot)
+          if (variance < 2) {
+            return fail(400, {
+              message: "Bot detected: input intervals are too consistent",
+            });
+          }
+
+          // No more than 5% of inputs should be instantaneous (0ms)
+          const bursts = intervals.filter((v) => v === 0).length;
+          if (bursts > keyLog.length * 0.05) {
+            return fail(400, {
+              message: "Bot detected: too many instantaneous inputs",
+            });
+          }
+
+          // Check for artificial patterns (perfectly regular intervals)
+          const modeInterval = Math.round(avg);
+          const patternMatch = validIntervals.filter(
+            (v) => Math.abs(v - modeInterval) < 5
+          ).length;
+          if (patternMatch > validIntervals.length * 0.9) {
+            return fail(400, {
+              message: "Bot detected: input pattern too regular",
+            });
+          }
+        }
+      }
+
+      // 4.4 Flick mode specific validation: check for impossible accuracy
+      if (isFlickMode && keyLog.length > 0) {
+        // Count total tokens across all played words
+        let totalTokens = 0;
+        for (const word of playedWords) {
+          const tokens = KanaEngine.tokenize(word.kana);
+          totalTokens += tokens.length;
         }
 
-        const bursts = intervals.filter((v) => v === 0).length;
-        if (bursts > keyLog.length * 0.8) {
-          return fail(400, { message: "Bot detected: impossible burst input" });
+        // In flick mode, one key = one token (perfect 1:1 match)
+        // If client has significantly fewer keys than tokens, they might be cheating
+        if (keyLog.length < totalTokens * 0.8) {
+          return fail(400, {
+            message: "Flick mode: missing key inputs for tokens",
+          });
         }
       }
 
