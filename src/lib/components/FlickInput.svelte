@@ -189,14 +189,74 @@
         }
       }
     } else if (isPalatal) {
-      // 目標が拗音の場合：対応する基本文字のみ許容
+      // 目標が拗音の場合：対応する基本文字 + 小さい文字のみ許容
+      // ただし IME によっては中間状態で小文字のフルサイズ（例: 'よ'）が入るため、それも許容する
       const baseChar = getPalaitalBaseChar(targetToken);
-      if (
-        inputText.length > 0 &&
-        inputText !== baseChar &&
-        !inputText.endsWith(baseChar)
-      ) {
-        // 基本文字以外が入力されたのでミス
+      const expectedSmall = targetToken[1];
+      const fullToSmall: Record<string, string> = {
+        や: "ゃ",
+        ゆ: "ゅ",
+        よ: "ょ",
+        つ: "っ",
+        わ: "ゎ",
+        あ: "ぁ",
+        い: "ぃ",
+        う: "ぅ",
+        え: "ぇ",
+        お: "ぉ",
+      };
+
+      if (inputText.length === 1) {
+        // 基本文字だけ入力された場合は OK（小さい文字待ち）
+        if (inputText !== baseChar) {
+          dispatch("error");
+          processingComplete = true;
+          composingText = "";
+          compositionText = "";
+          isComposing = false;
+
+          const target = e.target as HTMLInputElement;
+          if (target) {
+            target.value = "";
+            try {
+              const endEvent = new CompositionEvent("compositionend", {
+                data: inputText,
+              });
+              target.dispatchEvent(endEvent);
+            } catch (err) {
+              // ignore if not supported
+            }
+          }
+        }
+      } else if (inputText.length === 2) {
+        // 2文字入力された場合：基本文字 + 小さい文字（またはそのフルサイズ）をチェック
+        const firstChar = inputText[0];
+        const secondChar = inputText[1];
+        const secondMatches =
+          secondChar === expectedSmall ||
+          fullToSmall[secondChar] === expectedSmall;
+        if (firstChar !== baseChar || !secondMatches) {
+          dispatch("error");
+          processingComplete = true;
+          composingText = "";
+          compositionText = "";
+          isComposing = false;
+
+          const target = e.target as HTMLInputElement;
+          if (target) {
+            target.value = "";
+            try {
+              const endEvent = new CompositionEvent("compositionend", {
+                data: inputText,
+              });
+              target.dispatchEvent(endEvent);
+            } catch (err) {
+              // ignore if not supported
+            }
+          }
+        }
+      } else if (inputText.length > 2) {
+        // 3文字以上はミス
         dispatch("error");
         processingComplete = true;
         composingText = "";
@@ -206,7 +266,6 @@
         const target = e.target as HTMLInputElement;
         if (target) {
           target.value = "";
-          // 変換を確定して IME の状態をリセット
           try {
             const endEvent = new CompositionEvent("compositionend", {
               data: inputText,

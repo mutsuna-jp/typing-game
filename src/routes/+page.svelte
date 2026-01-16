@@ -882,8 +882,7 @@
 <div id="tv-set">
   <div id="screen" class:turn-on-anim={!isPlaying} bind:this={screenEl}>
     <div id="screen-content">
-      <h1 id="title">TV TYPE JP</h1>
-
+      <h1 id="title">TYPING</h1>
       <div class="info-bar">
         <span id="score-display-container">
           <span id="score-display">SCORE: {String(score).padStart(3, "0")}</span
