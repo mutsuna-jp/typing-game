@@ -46,6 +46,15 @@
     ぼ: "ほ",
   };
 
+  // 半濁音から対応する濁音へのマッピング（フリック変換の中間状態）
+  const semiToVoiced: Record<string, string> = {
+    ぱ: "ば",
+    ぴ: "び",
+    ぷ: "ぶ",
+    ぺ: "べ",
+    ぽ: "ぼ",
+  };
+
   // 拗音から基本文字へのマッピング（濁音・半濁音版含む）
   const palatalMap: Record<string, string> = {
     きゃ: "き",
@@ -190,7 +199,7 @@
       }
     } else if (isPalatal) {
       // 目標が拗音の場合：対応する基本文字 + 小さい文字のみ許容
-      // ただし IME によっては中間状態で小文字のフルサイズ（例: 'よ'）が入るため、それも許容する
+      // ただし IME によっては中間状態で小文字のフルサイズ（例: 'よ'）や濁音の中間状態（例: 'び'）が入るため、それも許容する
       const baseChar = getPalaitalBaseChar(targetToken);
       const expectedSmall = targetToken[1];
       const fullToSmall: Record<string, string> = {
@@ -206,9 +215,18 @@
         お: "ぉ",
       };
 
+      // 半濁音（ぴゃ等）の場合、濁音の中間状態（び / びゃ）を許容
+      const isSemiPalatal = baseChar in semiToVoiced;
+      const intermediateVoiced = isSemiPalatal
+        ? (semiToVoiced as any)[baseChar]
+        : null;
+
       if (inputText.length === 1) {
         // 基本文字だけ入力された場合は OK（小さい文字待ち）
-        if (inputText !== baseChar) {
+        const okSingle =
+          inputText === baseChar ||
+          (intermediateVoiced && inputText === intermediateVoiced);
+        if (!okSingle) {
           dispatch("error");
           processingComplete = true;
           composingText = "";
@@ -229,13 +247,16 @@
           }
         }
       } else if (inputText.length === 2) {
-        // 2文字入力された場合：基本文字 + 小さい文字（またはそのフルサイズ）をチェック
+        // 2文字入力された場合：基本文字/中間濁音 + 小さい文字（またはそのフルサイズ）をチェック
         const firstChar = inputText[0];
         const secondChar = inputText[1];
         const secondMatches =
           secondChar === expectedSmall ||
           fullToSmall[secondChar] === expectedSmall;
-        if (firstChar !== baseChar || !secondMatches) {
+        const firstMatches =
+          firstChar === baseChar ||
+          (intermediateVoiced && firstChar === intermediateVoiced);
+        if (!firstMatches || !secondMatches) {
           dispatch("error");
           processingComplete = true;
           composingText = "";
@@ -277,31 +298,40 @@
         }
       }
     } else if (isVoiced) {
-      // 目標が濁音・半濁音の場合：対応する基本文字のみ許容
+      // 目標が濁音・半濁音の場合
       const baseChar = getBaseChar(targetToken);
-      if (
-        inputText.length > 0 &&
-        inputText !== baseChar &&
-        !inputText.endsWith(baseChar)
-      ) {
-        // 基本文字以外が入力されたのでミス
-        dispatch("error");
-        processingComplete = true;
-        composingText = "";
-        compositionText = "";
-        isComposing = false;
+      const isSemiVoiced = targetToken in semiToVoiced;
+      const intermediateDevoiced = isSemiVoiced
+        ? semiToVoiced[targetToken]
+        : null;
 
-        const target = e.target as HTMLInputElement;
-        if (target) {
-          target.value = "";
-          // 変換を確定して IME の状態をリセット
-          try {
-            const endEvent = new CompositionEvent("compositionend", {
-              data: inputText,
-            });
-            target.dispatchEvent(endEvent);
-          } catch (err) {
-            // ignore if not supported
+      if (inputText.length > 0) {
+        // 許容される入力：基本文字、（半濁音なら対応する濁音、目標文字）
+        const isValid =
+          inputText === baseChar ||
+          inputText === targetToken ||
+          (intermediateDevoiced && inputText === intermediateDevoiced);
+
+        if (!isValid) {
+          // 許容外の入力 = ミス
+          dispatch("error");
+          processingComplete = true;
+          composingText = "";
+          compositionText = "";
+          isComposing = false;
+
+          const target = e.target as HTMLInputElement;
+          if (target) {
+            target.value = "";
+            // 変換を確定して IME の状態をリセット
+            try {
+              const endEvent = new CompositionEvent("compositionend", {
+                data: inputText,
+              });
+              target.dispatchEvent(endEvent);
+            } catch (err) {
+              // ignore if not supported
+            }
           }
         }
       }
