@@ -306,26 +306,44 @@
         }
       }
     } else if (isSmall) {
-      // 目標が小さい文字の場合：小さい文字のみ許容
-      if (inputText.length > 0 && !isSmallChar(inputText)) {
-        // 小さい文字以外が入力されたのでミス
-        dispatch("error");
-        processingComplete = true;
-        composingText = "";
-        compositionText = "";
-        isComposing = false;
+      // 目標が小さい文字の場合：小さい文字またはそのフルサイズを許容
+      // （フリック入力では フルサイズ→小さい文字 に変換される）
+      const fullToSmall: Record<string, string> = {
+        や: "ゃ",
+        ゆ: "ゅ",
+        よ: "ょ",
+        つ: "っ",
+        わ: "ゎ",
+        あ: "ぁ",
+        い: "ぃ",
+        う: "ぅ",
+        え: "ぇ",
+        お: "ぉ",
+      };
 
-        const target = e.target as HTMLInputElement;
-        if (target) {
-          target.value = "";
-          // 変換を確定して IME の状態をリセット
-          try {
-            const endEvent = new CompositionEvent("compositionend", {
-              data: inputText,
-            });
-            target.dispatchEvent(endEvent);
-          } catch (err) {
-            // ignore if not supported
+      if (inputText.length > 0) {
+        const isValid =
+          isSmallChar(inputText) || fullToSmall[inputText] === targetToken;
+        if (!isValid) {
+          // 小さい文字以外が入力されたのでミス
+          dispatch("error");
+          processingComplete = true;
+          composingText = "";
+          compositionText = "";
+          isComposing = false;
+
+          const target = e.target as HTMLInputElement;
+          if (target) {
+            target.value = "";
+            // 変換を確定して IME の状態をリセット
+            try {
+              const endEvent = new CompositionEvent("compositionend", {
+                data: inputText,
+              });
+              target.dispatchEvent(endEvent);
+            } catch (err) {
+              // ignore if not supported
+            }
           }
         }
       }
