@@ -99,7 +99,7 @@
   onMount(() => {
     isMobile =
       /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent,
+        navigator.userAgent
       ) || window.matchMedia("(max-width: 768px)").matches;
 
     username = localStorage.getItem("typing_game_username") || "guest";
@@ -128,7 +128,7 @@
         const kh = window.innerHeight - window.visualViewport!.height;
         document.documentElement.style.setProperty(
           "--keyboard-height",
-          `${Math.max(0, kh)}px`,
+          `${Math.max(0, kh)}px`
         );
       };
       _updateKeyboard = updateKeyboard;
@@ -320,7 +320,7 @@
   {#if !$isPlaying && !$gameStats}
     <div id="score-rule">
       SCORE = (LEN x {CONFIG.BASE_SCORE_PER_CHAR}) x (1 + COMBO x {Math.round(
-        CONFIG.COMBO_MULTIPLIER * 100,
+        CONFIG.COMBO_MULTIPLIER * 100
       )}%) + [PERFECT: {CONFIG.PERFECT_SCORE_BONUS}]
     </div>
   {/if}
