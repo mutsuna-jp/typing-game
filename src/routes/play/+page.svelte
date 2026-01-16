@@ -200,13 +200,24 @@
       composingText = "";
     }
 
-    // 一致判定: 完全一致 または 末尾一致（「し」→「しゃ」対応）
-    if (inputText === targetToken || inputText.endsWith(targetToken)) {
-      // 一致! 即座に処理
+    // 一致判定
+    // 完全一致は常にOK
+    if (inputText === targetToken) {
       Game.processFlickInput(targetToken);
       clearComposingState(target);
-    } else if (!isSpecial && inputText.length > 0) {
-      // 基本文字で不一致の場合、1文字入力された時点でミス判定
+      return;
+    }
+
+    // 2文字以上のトークン（「しゃ」など）の場合、末尾一致もチェック
+    // これにより「し」→「しゃ」の入力が可能
+    if (targetToken.length >= 2 && inputText.endsWith(targetToken)) {
+      Game.processFlickInput(targetToken);
+      clearComposingState(target);
+      return;
+    }
+
+    // 特殊文字でない場合、最後の1文字が一致しなければエラー
+    if (!isSpecial && inputText.length > 0) {
       const inputChar = inputText.slice(-1);
       if (inputChar !== targetToken) {
         Game.inputError();
