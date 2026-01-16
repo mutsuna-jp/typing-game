@@ -348,6 +348,15 @@
       message = "PREPARING SESSION...";
       this.resetState();
 
+      // Try to focus input component immediately (inside user gesture) so mobile IME opens reliably
+      const activeComponentOnStart =
+        inputMode === "flick" ? flickInputComponent : halfwidthInputComponent;
+      try {
+        activeComponentOnStart?.focus();
+      } catch (e) {
+        console.error("start focus error:", e);
+      }
+
       try {
         const fd = new FormData();
         fd.set("_action", "getGameToken");
@@ -425,7 +434,16 @@
         isPlaying = true;
         if (timerId) clearInterval(timerId);
         timerId = setInterval(() => this.tick(), 1000);
-        hiddenInputEl?.focus();
+        // Fallback: ensure the active input component is focused after preparation
+        const activeComponent =
+          inputMode === "flick" ? flickInputComponent : halfwidthInputComponent;
+        try {
+          activeComponent?.focus();
+          // Some UAs need a short delay to reliably switch keyboard layout
+          setTimeout(() => activeComponent?.focus(), 60);
+        } catch (e) {
+          console.error("post-start focus error:", e);
+        }
         message = "";
       }, 800);
     },

@@ -13,6 +13,7 @@
   let hiddenInputEl: HTMLInputElement;
   let compositionText = "";
   let isComposing = false;
+  let processingComplete = false; // 判定完了フラグ
 
   export let composingText = ""; // UI表示用
 
@@ -27,6 +28,7 @@
     isComposing = true;
     compositionText = "";
     composingText = "";
+    processingComplete = false;
   }
 
   function handleCompositionUpdate(e: CompositionEvent) {
@@ -54,6 +56,7 @@
     if (inputText === targetToken || inputText.endsWith(targetToken)) {
       // 一致! 即座に処理
       dispatch("correct", { key: targetToken });
+      processingComplete = true; // 判定完了フラグを設定
       // finalize composing state so IME doesn't remain in composition
       isComposing = false;
       composingText = "";
@@ -77,6 +80,7 @@
       const inputChar = inputText.slice(-1);
       if (inputChar !== targetToken) {
         dispatch("error");
+        processingComplete = true; // 判定完了フラグを設定
         composingText = "";
         compositionText = "";
 
@@ -87,6 +91,16 @@
   }
 
   function handleCompositionEnd(e: CompositionEvent) {
+    // 既に判定済みの場合はスキップ
+    if (processingComplete) {
+      isComposing = false;
+      compositionText = "";
+      composingText = "";
+      const target = e.target as HTMLInputElement;
+      if (target) target.value = "";
+      return;
+    }
+
     isComposing = false;
     compositionText = "";
     composingText = "";
