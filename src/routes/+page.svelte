@@ -94,7 +94,7 @@
       freq: number,
       type: OscillatorType | string,
       duration: number,
-      vol: number
+      vol: number,
     ) {
       if (!this.ctx) return;
       const osc = this.ctx.createOscillator();
@@ -104,7 +104,7 @@
       gain.gain.setValueAtTime(vol, this.ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(
         0.01,
-        this.ctx.currentTime + duration
+        this.ctx.currentTime + duration,
       );
       osc.connect(gain);
       gain.connect(this.ctx.destination);
@@ -134,6 +134,7 @@
   import { replaceState, goto } from "$app/navigation";
   import WordDisplay from "$lib/components/WordDisplay.svelte";
   import GameReport from "$lib/components/GameReport.svelte";
+  import Button from "$lib/components/Button.svelte";
   import { isPlaying as isPlayingStore } from "$lib/stores";
 
   // Reactive State
@@ -242,7 +243,7 @@
         const word = getNextWordSeeded(
           this.activeList,
           elapsedTime,
-          this.gamePRNG
+          this.gamePRNG,
         );
         return { ...word, tokens: KanaEngine.tokenize(word.kana) };
       }
@@ -384,7 +385,7 @@
             // Fallback: pick an object with numeric seed, or reconstruct
             const obj = gameObj.find(
               (el: any) =>
-                el && typeof el === "object" && typeof el.seed === "number"
+                el && typeof el === "object" && typeof el.seed === "number",
             );
             if (obj) {
               // If the object contains a numeric small 'gameId' (legacy), prefer string id if available
@@ -393,7 +394,7 @@
             } else {
               if (numSeed !== undefined) {
                 const possibleGameId = gameObj.find(
-                  (el: any) => typeof el === "string" || typeof el === "number"
+                  (el: any) => typeof el === "string" || typeof el === "number",
                 );
                 gameObj = {
                   gameId:
@@ -647,7 +648,7 @@
             gameId: currentGameId,
             userId,
             username,
-          })
+          }),
         );
 
         const response = await fetch("?/submitScore", {
@@ -698,7 +699,7 @@
           JSON.stringify({
             userId,
             username: newName,
-          })
+          }),
         );
 
         const response = await fetch("?/registerName", {
@@ -735,13 +736,13 @@
         transferInput.length !== 64
       ) {
         alert(
-          "Invalid Transfer ID. Must start with 'usr_' and be 64 characters."
+          "Invalid Transfer ID. Must start with 'usr_' and be 64 characters.",
         );
         return;
       }
       if (
         confirm(
-          "Importing this ID will overwrite your current progress. Continue?"
+          "Importing this ID will overwrite your current progress. Continue?",
         )
       ) {
         localStorage.setItem("typing_game_user_id", transferInput);
@@ -750,11 +751,15 @@
     },
   };
 
+  onDestroy(() => {
+    isPlayingStore.set(false);
+  });
+
   onMount(async () => {
     // モバイル環境の検出
     isMobile =
       /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent
+        navigator.userAgent,
       ) || window.matchMedia("(max-width: 768px)").matches;
 
     // Load or generate user_id
@@ -998,7 +1003,7 @@
         id="time-display"
         class:low-time={timeLeft < 10}
         style={timeLeft < 10
-          ? "color: oklch(100% 0 0); text-shadow: 0 0 10px oklch(65% 0.2 20);"
+          ? "color: var(--accent-cta); text-shadow: 0 0 10px var(--error);"
           : ""}
       >
         TIME: {timeLeft}
@@ -1012,7 +1017,7 @@
 
 <div id="score-rule">
   SCORE = (LEN x {CONFIG.BASE_SCORE_PER_CHAR}) x (1 + COMBO x {Math.round(
-    CONFIG.COMBO_MULTIPLIER * 100
+    CONFIG.COMBO_MULTIPLIER * 100,
   )}%) + [PERFECT: {CONFIG.PERFECT_SCORE_BONUS}]
 </div>
 
@@ -1063,11 +1068,11 @@
       </div>
     {/if}
     <div class="ranking-actions">
-      <button class="btn small subtle" onclick={() => (showProfileModal = true)}
-        >PROFILE & HISTORY</button
+      <Button class="small subtle" onclick={() => (showProfileModal = true)}
+        >PROFILE & HISTORY</Button
       >
-      <button class="btn small subtle" onclick={() => goto(`${base}/rankings`)}
-        >VIEW ALL RANKINGS</button
+      <Button class="small subtle" onclick={() => goto(`${base}/rankings`)}
+        >VIEW ALL RANKINGS</Button
       >
     </div>
   </div>
@@ -1132,7 +1137,7 @@
                   {#each scoreHistory as entry}
                     <tr>
                       <td>{new Date(entry.date).toLocaleDateString()}</td>
-                      <td style="color: oklch(85% 0.2 90)">{entry.score}</td>
+                      <td style="color: var(--score)">{entry.score}</td>
                       <td>{entry.kpm}</td>
                       <td>{entry.accuracy}%</td>
                     </tr>
@@ -1144,7 +1149,7 @@
         </div>
 
         <hr
-          style="border: 0; border-top: 1px dashed oklch(45% 0 250); margin: 20px 0;"
+          style="border: 0; border-top: 1px dashed var(--accent-crt); margin: 20px 0;"
         />
 
         <!-- Transfer Section (Hidden by default to keep it clean) -->
@@ -1153,10 +1158,10 @@
           <div class="transfer-box">
             <div class="box-label">YOUR TRANSFER ID:</div>
             <div class="id-display">{userId}</div>
-            <button
-              class="btn small"
+            <Button
+              class="small"
               onclick={() => navigator.clipboard.writeText(userId)}
-              >COPY ID</button
+              >COPY ID</Button
             >
           </div>
           <div class="import-box">
@@ -1167,16 +1172,15 @@
               placeholder="usr_..."
               style="width: 100%; margin-bottom: 10px;"
             />
-            <button class="btn small" onclick={() => Game.importTransferId()}
-              >IMPORT & RELOAD</button
+            <Button class="small" onclick={() => Game.importTransferId()}
+              >IMPORT & RELOAD</Button
             >
           </div>
         </details>
       </div>
       <div class="modal-actions">
-        <button
-          class="btn small subtle"
-          onclick={() => (showProfileModal = false)}>CLOSE</button
+        <Button class="small subtle" onclick={() => (showProfileModal = false)}
+          >CLOSE</Button
         >
       </div>
     </div>
@@ -1187,34 +1191,34 @@
 {#if !isPlaying && !gameStats}
   <div
     id="file-status"
-    style="color: {isFileError ? 'oklch(65% 0.25 20)' : 'oklch(80% 0.2 160)'}"
+    style="color: {isFileError ? 'var(--error)' : 'var(--time)'}"
   >
     <span style="text-align: center;">
       {fileStatus}
       <span
         style="font-size: 0.7rem; margin-left:10px; opacity: 0.8; color: {isCustomCSV
-          ? 'oklch(65% 0.2 40)'
-          : 'oklch(80% 0.2 160)'}"
+          ? 'var(--error)'
+          : 'var(--time)'}"
       >
         [{isCustomCSV ? "CUSTOM / OFFLINE" : "OFFICIAL / ONLINE"}]
       </span>
     </span>
     {#if lastErrors.length > 0}
-      <button
+      <Button
         id="show-errors-btn"
-        class="btn small subtle"
+        class="small subtle"
         onclick={() => (showErrorList = true)}
         aria-label="Show CSV errors"
       >
         Errors ({lastErrors.length})
-      </button>
+      </Button>
     {/if}
   </div>
 {/if}
 
 <div id="controls-container" style="display: {!isPlaying ? 'block' : 'none'}">
   {#if !gameStats}
-    <label for="csv-input" class="btn file-btn">LOAD CSV</label>
+    <Button tag="label" for="csv-input" class="file-btn">LOAD CSV</Button>
     <input
       type="file"
       id="csv-input"
@@ -1223,23 +1227,21 @@
       onchange={(e) => Game.handleFile(e)}
     />
   {/if}
-  <button
+  <Button
     id="start-btn"
-    class="btn"
     disabled={!isStartEnabled || isPreparing}
-    class:disabled={!isStartEnabled || isPreparing}
     onclick={() => Game.start()}
   >
     {gameStats ? "RETRY" : isPreparing ? "LOADING..." : "START GAME"}
-  </button>
+  </Button>
   {#if isMobile}
-    <button
-      class="btn input-mode-toggle"
+    <Button
+      class="input-mode-toggle"
       onclick={toggleInputMode}
       title="入力モード切替"
     >
       {inputMode === "flick" ? "FLICK INPUT" : "HALFWIDTH INPUT"}
-    </button>
+    </Button>
   {/if}
 </div>
 
@@ -1269,15 +1271,14 @@
         </ul>
       </div>
       <div class="modal-actions">
-        <button class="btn" onclick={() => (showErrorList = false)}
-          >Close</button
-        >
+        <Button onclick={() => (showErrorList = false)}>Close</Button>
       </div>
     </div>
   </div>
 {/if}
 
 <input
+  class="visually-hidden"
   type="text"
   id="hidden-input"
   inputmode={inputMode === "flick" ? undefined : "text"}
@@ -1294,6 +1295,20 @@
 />
 
 <style>
+  /* Visually hidden utility (accessible) */
+  .visually-hidden {
+    border: 0 !important;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    padding: 0;
+    position: absolute !important;
+    white-space: nowrap;
+    width: 1px;
+  }
+
   /* Modal for CSV error list and PROFILE/HISTORY modal */
   :global(.modal-backdrop) {
     position: fixed;
@@ -1306,8 +1321,8 @@
     padding: 20px;
   }
   :global(.modal) {
-    background: oklch(20% 0.02 250);
-    border: 4px solid oklch(100% 0 0);
+    background: var(--modal-bg);
+    border: 4px solid var(--accent-cta);
     padding: 20px;
     max-width: 600px;
     width: 100%;
@@ -1335,13 +1350,13 @@
   :global(.import-box) {
     margin-top: 15px;
     padding: 10px;
-    border: 1px solid oklch(45% 0 250);
-    background: oklch(10% 0 0 / 0.3);
+    border: 1px solid var(--accent-crt);
+    background: var(--panel-bg);
   }
 
   :global(.box-label) {
     font-size: 0.7rem;
-    color: oklch(45% 0 250);
+    color: var(--accent-crt);
     margin-bottom: 5px;
   }
 
@@ -1349,20 +1364,16 @@
     font-family: monospace;
     font-size: 0.7rem;
     background: black;
-    color: oklch(85% 0.2 90);
+    color: var(--score);
     padding: 10px;
     word-break: break-all;
     margin-bottom: 5px;
-    border: 1px solid oklch(25% 0 250);
+    border: 1px solid var(--accent-outline);
   }
 
   :global(.modal-actions) {
     margin-top: 12px;
     text-align: right;
-  }
-  :global(.btn.small) {
-    padding: 6px 10px;
-    font-size: 0.9rem;
   }
 
   /* --- Profile Modal Styles --- */
@@ -1378,13 +1389,13 @@
   }
   :global(.save-hint) {
     font-size: 0.6rem;
-    color: oklch(50% 0.1 150);
+    color: var(--save-hint);
     letter-spacing: 1px;
   }
   :global(.history-list) {
     margin-top: 10px;
-    background: oklch(10% 0 0 / 0.5);
-    border: 1px solid oklch(25% 0 250);
+    background: var(--panel-bg-strong);
+    border: 1px solid var(--accent-outline);
     max-height: 200px;
     overflow-y: auto;
   }
@@ -1397,22 +1408,22 @@
     font-size: 0.6rem;
     padding: 5px;
     text-align: left;
-    border-bottom: 1px solid oklch(45% 0 250);
-    color: oklch(45% 0 250);
+    border-bottom: 1px solid var(--accent-crt);
+    color: var(--accent-crt);
   }
   :global(.history-table td) {
     padding: 5px;
-    border-bottom: 1px dashed oklch(20% 0 250);
+    border-bottom: 1px dashed var(--muted-outline);
   }
   :global(.no-history) {
     padding: 20px;
     font-size: 0.8rem;
-    color: oklch(35% 0 250);
+    color: var(--muted);
     text-align: center;
   }
   :global(.transfer-details) {
     font-size: 0.8rem;
-    color: oklch(45% 0 250);
+    color: var(--accent-crt);
   }
   :global(.transfer-details summary) {
     cursor: pointer;
@@ -1430,12 +1441,12 @@
   }
 
   /* --- Typography & Elements --- */
-  :global(h1) {
+  h1 {
     font-size: 3rem;
     margin: 0 0 10px 0;
     letter-spacing: 5px;
     text-transform: uppercase;
-    border-bottom: 4px solid oklch(100% 0 0);
+    border-bottom: 4px solid var(--accent-cta);
     padding-bottom: 5px;
   }
 
@@ -1445,8 +1456,8 @@
     width: 80%;
     font-size: 1.5rem;
     margin-bottom: 5px;
-    border-top: 2px solid oklch(45% 0 250);
-    border-bottom: 2px solid oklch(45% 0 250);
+    border-top: 2px solid var(--accent-crt);
+    border-bottom: 2px solid var(--accent-crt);
     padding: 10px 0;
     position: relative;
   }
@@ -1454,7 +1465,7 @@
   /* スコア計算式表示のスタイル調整 */
   :global(#score-rule) {
     font-size: 0.8rem;
-    color: oklch(65% 0.01 250);
+    color: var(--muted);
     margin-bottom: 10px;
     letter-spacing: 1px;
     text-transform: uppercase;
@@ -1509,21 +1520,21 @@
   :global(.time-bonus) {
     right: 0;
     top: -30px;
-    color: oklch(80% 0.2 160);
+    color: var(--time);
   }
   :global(.time-bonus.perfect) {
-    color: oklch(80% 0.2 190);
-    text-shadow: 0 0 5px oklch(80% 0.2 190);
+    color: var(--success);
+    text-shadow: 0 0 5px var(--success);
     font-size: 1.4rem;
   }
   :global(.time-bonus.error) {
-    color: oklch(65% 0.2 20);
-    text-shadow: 0 0 5px oklch(65% 0.2 20 / 0.8);
+    color: var(--error);
+    text-shadow: 0 0 5px var(--error-opaque);
   }
   :global(.score-bonus) {
     left: 0;
     top: -30px;
-    color: oklch(85% 0.2 90);
+    color: var(--score);
   }
 
   :global(#message) {
@@ -1535,16 +1546,16 @@
   :global(.ranking-preview) {
     margin-top: 20px;
     width: 60%;
-    border: 1px solid oklch(45% 0 250);
+    border: 1px solid var(--accent-crt);
     padding: 10px;
-    background: oklch(10% 0 0 / 0.5);
+    background: var(--panel-bg-strong);
   }
 
   :global(.ranking-header) {
     font-size: 0.9rem;
-    color: oklch(45% 0 250);
+    color: var(--accent-crt);
     margin-bottom: 5px;
-    border-bottom: 1px solid oklch(45% 0 250);
+    border-bottom: 1px solid var(--accent-crt);
   }
 
   :global(.rank-list) {
@@ -1559,65 +1570,28 @@
   }
 
   :global(.rank-num) {
-    color: oklch(75% 0 0);
+    color: var(--accent-cta);
     width: 30px;
   }
 
   :global(.rank-name) {
     flex: 1;
-    color: oklch(100% 0 0);
+    color: var(--accent-cta);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   :global(.rank-score) {
-    color: oklch(85% 0.2 90);
+    color: var(--score);
   }
 
   :global(.user-best) {
     margin-top: 10px;
     font-size: 0.8rem;
-    color: oklch(80% 0.2 160);
-    border-top: 1px dashed oklch(45% 0 250);
+    color: var(--time);
+    border-top: 1px dashed var(--accent-crt);
     padding-top: 5px;
-  }
-
-  :global(.btn) {
-    background: transparent;
-    border: 2px solid oklch(100% 0 0);
-    color: oklch(100% 0 0);
-    padding: 15px 40px;
-    font-size: 1.5rem;
-    font-family: inherit;
-    cursor: pointer;
-    text-transform: uppercase;
-    margin-top: 10px;
-    box-shadow: 0 0 10px oklch(100% 0 0 / 0.5);
-    transition: all 0.2s;
-    outline: none;
-    display: inline-block;
-    text-decoration: none;
-  }
-  :global(.btn:hover),
-  :global(.btn:focus) {
-    background: oklch(100% 0 0);
-    color: oklch(0% 0 0);
-    box-shadow: 0 0 20px oklch(100% 0 0 / 0.8);
-  }
-  :global(.btn[disabled]),
-  :global(.btn.disabled) {
-    opacity: 0.5;
-    cursor: not-allowed;
-    pointer-events: none;
-    filter: grayscale(40%);
-  }
-
-  :global(.file-btn) {
-    font-size: 1.2rem;
-    padding: 10px 30px;
-    border-style: dashed;
-    margin-bottom: 20px;
   }
 
   :global(#controls-container) {
@@ -1626,19 +1600,6 @@
     align-items: center;
     gap: 10px;
     width: 100%;
-  }
-
-  :global(.input-mode-toggle) {
-    font-size: 1rem;
-    padding: 8px 20px;
-    margin-top: 5px;
-  }
-
-  :global(.input-mode-toggle:hover),
-  :global(.input-mode-toggle:focus) {
-    background: oklch(100% 0 0);
-    color: oklch(0% 0 0);
-    box-shadow: 0 0 20px oklch(100% 0 0 / 0.8);
   }
 
   @media (max-width: 600px) {
@@ -1696,29 +1657,6 @@
       width: 100%;
     }
 
-    :global(.btn) {
-      padding: 12px 30px;
-      font-size: 1.2rem;
-      margin-top: 5px;
-      margin-bottom: 5px;
-      width: auto;
-      min-width: 200px;
-    }
-
-    :global(.btn.small) {
-      padding: 8px 15px;
-      font-size: 0.85rem;
-      min-width: auto;
-    }
-
-    :global(.file-btn) {
-      font-size: 1rem;
-      padding: 10px 25px;
-      margin-bottom: 5px;
-      margin-top: 5px;
-      min-width: 200px;
-    }
-
     :global(#controls-container) {
       gap: 5px;
       margin-top: 10px;
@@ -1749,7 +1687,6 @@
       font-size: 1.3rem;
     }
 
-    :global(.btn),
     :global(button),
     :global(label) {
       -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);

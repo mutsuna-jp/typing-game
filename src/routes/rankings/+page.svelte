@@ -83,10 +83,10 @@
     width: 8px;
   }
   .ranking-container::-webkit-scrollbar-track {
-    background: oklch(10% 0 0 / 0.5);
+    background: var(--panel-bg-strong);
   }
   .ranking-container::-webkit-scrollbar-thumb {
-    background: oklch(100% 0 0);
+    background: var(--accent-cta);
   }
 
   .ranking-table {
@@ -97,19 +97,19 @@
   }
 
   th {
-    color: oklch(45% 0 250);
+    color: var(--accent-crt);
     font-size: 0.9rem;
     padding: 10px;
-    border-bottom: 1px solid oklch(45% 0 250);
+    border-bottom: 1px solid var(--accent-crt);
   }
 
   td {
     padding: 12px 10px;
-    border-bottom: 1px dashed oklch(35% 0 250);
+    border-bottom: 1px dashed var(--muted-outline);
   }
 
   .col-rank {
-    color: oklch(75% 0 0);
+    color: var(--accent-cta);
     width: 10%;
   }
   .col-name {
@@ -118,15 +118,15 @@
     font-weight: bold;
   }
   .col-score {
-    color: oklch(85% 0.2 90);
+    color: var(--score);
     width: 15%;
   }
   .col-kpm {
-    color: oklch(80% 0.2 160);
+    color: var(--time);
     width: 15%;
   }
   .col-date {
-    color: oklch(55% 0.01 250);
+    color: var(--muted);
     width: 20%;
     font-size: 0.8rem;
   }

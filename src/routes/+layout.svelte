@@ -2,6 +2,7 @@
   import "../app.css";
   import favicon from "$lib/assets/favicon.png";
   import { isPlaying } from "$lib/stores";
+  import { page } from "$app/stores";
   let { children } = $props();
 </script>
 
@@ -10,11 +11,13 @@
 </svelte:head>
 
 <div id="tv-set">
-  <div id="screen" class:turn-on-anim={!$isPlaying}>
-    <div id="screen-content">
-      {@render children()}
+  {#key $page.url.pathname}
+    <div id="screen" class:turn-on-anim={!$isPlaying}>
+      <div id="screen-content">
+        {@render children()}
+      </div>
     </div>
-  </div>
+  {/key}
 </div>
 
 <style>
@@ -29,8 +32,8 @@
     body {
       margin: 0;
       padding: 0;
-      background: oklch(0% 0 0);
-      color: oklch(100% 0 0);
+      background: var(--bg);
+      color: var(--accent-cta);
       font-family: "Courier New", monospace;
     }
 
@@ -43,8 +46,8 @@
       align-items: center;
       background: radial-gradient(
         circle at center,
-        oklch(18% 0.01 250),
-        oklch(10% 0.01 250)
+        var(--modal-bg),
+        var(--panel-bg)
       );
       position: relative;
       overflow: hidden;
@@ -57,11 +60,11 @@
       height: 90%;
       max-width: 1000px;
       max-height: 800px;
-      background-color: oklch(20% 0.02 250);
+      background-color: var(--modal-bg);
       border-radius: 50% / 10%; /* Iconic curvature */
       overflow: hidden;
       /* Inner glow only, no outer frame/border */
-      box-shadow: inset 0 0 100px oklch(0% 0 0 / 0.9);
+      box-shadow: inset 0 0 100px var(--bg-opaque);
       transform: perspective(1000px) rotateX(1deg);
       z-index: 10;
     }
@@ -71,15 +74,12 @@
       display: block;
       position: absolute;
       inset: 0;
-      background: linear-gradient(
-          oklch(0% 0 0 / 0) 50%,
-          oklch(0% 0 0 / 0.25) 50%
-        ),
+      background: linear-gradient(transparent 50%, rgba(0, 0, 0, 0.25) 50%),
         linear-gradient(
           90deg,
-          oklch(60% 0.15 20 / 0.06),
-          oklch(60% 0.15 140 / 0.02),
-          oklch(60% 0.15 260 / 0.06)
+          var(--scanline-a),
+          var(--scanline-b),
+          var(--scanline-c)
         );
       z-index: 10;
       /* Scanlines */
@@ -94,8 +94,8 @@
       inset: 0;
       background: radial-gradient(
         circle,
-        oklch(90% 0.02 250 / 0.1) 0%,
-        oklch(0% 0 0 / 0.8) 90%
+        var(--screen-glow) 0%,
+        var(--screen-fade) 90%
       );
       display: flex;
       flex-direction: column;
@@ -106,8 +106,8 @@
       padding: 20px;
       animation: flicker 0.15s infinite;
       text-shadow:
-        0 0 4px oklch(100% 0 0 / 0.6),
-        2px 2px 0 oklch(0% 0 0 / 0.5);
+        0 0 4px var(--accent-cta),
+        2px 2px 0 rgba(0, 0, 0, 0.5);
     }
 
     @keyframes flicker {
@@ -148,7 +148,7 @@
         border-bottom: 4px solid transparent;
       }
       50% {
-        border-bottom: 4px solid oklch(100% 0 0);
+        border-bottom: 4px solid var(--accent-cta);
       }
     }
 
