@@ -99,7 +99,7 @@
   onMount(() => {
     isMobile =
       /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent,
+        navigator.userAgent
       ) || window.matchMedia("(max-width: 768px)").matches;
 
     username = localStorage.getItem("typing_game_username") || "guest";
@@ -121,6 +121,21 @@
       }
     }, 100);
 
+    // Visual viewport handling for virtual keyboard height (mobile)
+    let _updateKeyboard: (() => void) | null = null;
+    if (typeof window !== "undefined" && window.visualViewport) {
+      const updateKeyboard = () => {
+        const kh = window.innerHeight - window.visualViewport!.height;
+        document.documentElement.style.setProperty(
+          "--keyboard-height",
+          `${Math.max(0, kh)}px`
+        );
+      };
+      _updateKeyboard = updateKeyboard;
+      window.visualViewport.addEventListener("resize", updateKeyboard);
+      updateKeyboard();
+    }
+
     const clickHandler = () => {
       if ($isPlaying) hiddenInputEl?.focus();
     };
@@ -136,6 +151,9 @@
     return () => {
       document.removeEventListener("click", clickHandler);
       window.removeEventListener("keydown", keydownHandler);
+      if (_updateKeyboard && window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", _updateKeyboard);
+      }
       Game.resetState();
     };
   });
@@ -277,7 +295,7 @@
   {#if !$isPlaying && !$gameStats}
     <div id="score-rule">
       SCORE = (LEN x {CONFIG.BASE_SCORE_PER_CHAR}) x (1 + COMBO x {Math.round(
-        CONFIG.COMBO_MULTIPLIER * 100,
+        CONFIG.COMBO_MULTIPLIER * 100
       )}%) + [PERFECT: {CONFIG.PERFECT_SCORE_BONUS}]
     </div>
   {/if}
@@ -340,7 +358,7 @@
     autocorrect="off"
     autocapitalize="none"
     spellcheck="false"
-    style="position: absolute; opacity: 0; pointer-events: none; z-index: -1;"
+    style="position: fixed; left: 4px; bottom: 4px; width: 1px; height: 1px; opacity: 0; pointer-events: auto; z-index: 9999;"
   />
 </div>
 
@@ -354,6 +372,10 @@
     align-items: center;
     position: relative;
     min-height: 400px;
+    padding-bottom: max(
+      var(--keyboard-height, 0px),
+      env(safe-area-inset-bottom)
+    );
   }
 
   .header-actions {
