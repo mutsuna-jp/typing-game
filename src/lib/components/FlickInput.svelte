@@ -134,8 +134,8 @@
   autocorrect="off"
   autocapitalize="none"
   spellcheck="false"
-  oninput={handleInput}
-  oncompositionstart={handleCompositionStart}
-  oncompositionupdate={handleCompositionUpdate}
-  oncompositionend={handleCompositionEnd}
+  on:input={handleInput}
+  on:compositionstart={handleCompositionStart}
+  on:compositionupdate={handleCompositionUpdate}
+  on:compositionend={handleCompositionEnd}
 />

@@ -375,10 +375,10 @@
     inputmode={inputMode === "halfwidth" ? "url" : "text"}
     id="hidden-input"
     bind:this={hiddenInputEl}
-    oninput={handleHiddenInput}
-    oncompositionstart={() => (isComposing = true)}
-    oncompositionupdate={handleCompositionUpdate}
-    oncompositionend={handleCompositionEnd}
+    on:input={handleHiddenInput}
+    on:compositionstart={() => (isComposing = true)}
+    on:compositionupdate={handleCompositionUpdate}
+    on:compositionend={handleCompositionEnd}
     autocomplete="off"
     autocorrect="off"
     autocapitalize="none"

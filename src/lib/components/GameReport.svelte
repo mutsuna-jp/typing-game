@@ -102,7 +102,7 @@
           <button
             class="reg-btn"
             disabled={isSubmitting}
-            onclick={handleRegister}
+            on:click={handleRegister}
             >{isSubmitting ? "WAIT..." : "REGISTER"}</button
           >
         </div>
@@ -113,7 +113,7 @@
 
   <div class="nav-links">
     <a href="{base}/" class="nav-link">BACK TO TOP</a>
-    <button class="nav-link" onclick={handleRetry} aria-label="Retry (R)"
+    <button class="nav-link" on:click={handleRetry} aria-label="Retry (R)"
       >RETRY (R)</button
     >
     <a href="{base}/rankings" class="nav-link">VIEW RANKINGS</a>

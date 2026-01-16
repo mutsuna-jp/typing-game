@@ -46,7 +46,7 @@
   }
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window on:keydown={handleKeydown} />
 
 <input
   type="text"
@@ -57,7 +57,7 @@
   autocorrect="off"
   autocapitalize="none"
   spellcheck="false"
-  oninput={handleInput}
+  on:input={handleInput}
   style="position: absolute; opacity: 0; pointer-events: none;"
 />
 
