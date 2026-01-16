@@ -99,7 +99,7 @@
   onMount(() => {
     isMobile =
       /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent
+        navigator.userAgent,
       ) || window.matchMedia("(max-width: 768px)").matches;
 
     username = localStorage.getItem("typing_game_username") || "guest";
@@ -128,7 +128,7 @@
         const kh = window.innerHeight - window.visualViewport!.height;
         document.documentElement.style.setProperty(
           "--keyboard-height",
-          `${Math.max(0, kh)}px`
+          `${Math.max(0, kh)}px`,
         );
       };
       _updateKeyboard = updateKeyboard;
@@ -181,23 +181,57 @@
 
   function handleCompositionUpdate(e: CompositionEvent) {
     if (!$isPlaying || inputMode !== "flick") return;
-    composingText = e.data || "";
+    const inputText = e.data || "";
+    composingText = inputText;
+
     if (!$currentWord || $tokenIndex >= $currentWord.tokens.length) {
       composingText = "";
       return;
     }
+
     const targetToken = $currentWord.tokens[$tokenIndex];
-    const inputText = e.data || "";
     const target = e.target as HTMLInputElement;
 
+    // 完全一致 → 確定
     if (inputText === targetToken) {
       Game.processFlickInput(targetToken);
       clearComposingState(target);
-    } else if (!targetToken.startsWith(inputText)) {
-      if (inputText.length > 0) {
-        Game.inputError();
-        clearComposingState(target);
+      return;
+    }
+
+    // 部分一致 → 入力継続を許可（2段階入力対応）
+    if (targetToken.startsWith(inputText)) {
+      // 何もしない（入力継続）
+      return;
+    }
+
+    // 小文字系の特殊ケース（「つ」→「っ」など）
+    // 小文字への変換途中を許可
+    const smallKanaMap: Record<string, string[]> = {
+      っ: ["つ"],
+      ゃ: ["や"],
+      ゅ: ["ゆ"],
+      ょ: ["よ"],
+      ぁ: ["あ"],
+      ぃ: ["い"],
+      ぅ: ["う"],
+      ぇ: ["え"],
+      ぉ: ["お"],
+      ゎ: ["わ"],
+    };
+
+    if (smallKanaMap[targetToken]) {
+      const validSources = smallKanaMap[targetToken];
+      if (validSources.includes(inputText)) {
+        // 大文字から小文字への変換途中として許可
+        return;
       }
+    }
+
+    // 不一致 → エラー
+    if (inputText.length > 0) {
+      Game.inputError();
+      clearComposingState(target);
     }
   }
 
@@ -295,7 +329,7 @@
   {#if !$isPlaying && !$gameStats}
     <div id="score-rule">
       SCORE = (LEN x {CONFIG.BASE_SCORE_PER_CHAR}) x (1 + COMBO x {Math.round(
-        CONFIG.COMBO_MULTIPLIER * 100
+        CONFIG.COMBO_MULTIPLIER * 100,
       )}%) + [PERFECT: {CONFIG.PERFECT_SCORE_BONUS}]
     </div>
   {/if}
