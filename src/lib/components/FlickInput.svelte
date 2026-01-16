@@ -17,6 +17,117 @@
 
   export let composingText = ""; // UI表示用
 
+  // 濁音・半濁音から基本文字へのマッピング
+  const voicedMap: Record<string, string> = {
+    が: "か",
+    ぎ: "き",
+    ぐ: "く",
+    げ: "け",
+    ご: "こ",
+    ぱ: "は",
+    ぴ: "ひ",
+    ぷ: "ふ",
+    ぺ: "へ",
+    ぽ: "ほ",
+    ざ: "さ",
+    じ: "し",
+    ず: "す",
+    ぜ: "せ",
+    ぞ: "そ",
+    だ: "た",
+    ぢ: "ち",
+    づ: "つ",
+    で: "て",
+    ど: "と",
+    ば: "は",
+    び: "ひ",
+    ぶ: "ふ",
+    べ: "へ",
+    ぼ: "ほ",
+  };
+
+  // 拗音から基本文字へのマッピング（濁音・半濁音版含む）
+  const palatalMap: Record<string, string> = {
+    きゃ: "き",
+    きゅ: "き",
+    きょ: "き",
+    しゃ: "し",
+    しゅ: "し",
+    しょ: "し",
+    ちゃ: "ち",
+    ちゅ: "ち",
+    ちょ: "ち",
+    にゃ: "に",
+    にゅ: "に",
+    にょ: "に",
+    ひゃ: "ひ",
+    ひゅ: "ひ",
+    ひょ: "ひ",
+    みゃ: "み",
+    みゅ: "み",
+    みょ: "み",
+    りゃ: "り",
+    りゅ: "り",
+    りょ: "り",
+    ぎゃ: "ぎ",
+    ぎゅ: "ぎ",
+    ぎょ: "ぎ",
+    じゃ: "じ",
+    じゅ: "じ",
+    じょ: "じ",
+    びゃ: "び",
+    びゅ: "び",
+    びょ: "び",
+    ぴゃ: "ぴ",
+    ぴゅ: "ぴ",
+    ぴょ: "ぴ",
+    てゃ: "て",
+    てゅ: "て",
+    てょ: "て",
+    でゃ: "で",
+    でゅ: "で",
+    でょ: "で",
+  };
+
+  // 濁音・半濁音かどうかを判定
+  function isVoicedCharacter(char: string): boolean {
+    return char in voicedMap;
+  }
+
+  // 濁音・半濁音から基本文字を取得
+  function getBaseChar(char: string): string {
+    return voicedMap[char] || char;
+  }
+
+  // 拗音かどうかを判定
+  function isPalatalized(char: string): boolean {
+    return char in palatalMap;
+  }
+
+  // 拗音から基本文字を取得
+  function getPalaitalBaseChar(char: string): string {
+    return palatalMap[char] || char;
+  }
+
+  // 小さい文字のセット
+  const smallChars = new Set([
+    "ぁ",
+    "ぃ",
+    "ぅ",
+    "ぇ",
+    "ぉ",
+    "ゃ",
+    "ゅ",
+    "ょ",
+    "ゎ",
+    "っ",
+  ]);
+
+  // 小さい文字かどうかを判定
+  function isSmallChar(char: string): boolean {
+    return smallChars.has(char);
+  }
+
   // 特殊文字(濁音、半濁音、拗音、小文字)かどうかを判定
   function isSpecialChar(char: string): boolean {
     const specialChars =
@@ -47,7 +158,9 @@
     }
 
     const targetToken = currentWord.tokens[tokenIndex];
-    const isSpecial = isSpecialChar(targetToken);
+    const isVoiced = isVoicedCharacter(targetToken);
+    const isPalatal = isPalatalized(targetToken);
+    const isSmall = isSmallChar(targetToken);
 
     // 常に入力を表示（`+page.svelte` と合わせる）
     composingText = inputText;
@@ -75,12 +188,69 @@
           // ignore if not supported
         }
       }
-    } else if (!isSpecial && inputText.length > 0) {
-      // 基本文字で不一致の場合、1文字入力された時点でミス判定
-      const inputChar = inputText.slice(-1);
-      if (inputChar !== targetToken) {
+    } else if (isPalatal) {
+      // 目標が拗音の場合：対応する基本文字のみ許容
+      const baseChar = getPalaitalBaseChar(targetToken);
+      if (
+        inputText.length > 0 &&
+        inputText !== baseChar &&
+        !inputText.endsWith(baseChar)
+      ) {
+        // 基本文字以外が入力されたのでミス
         dispatch("error");
-        processingComplete = true; // 判定完了フラグを設定
+        processingComplete = true;
+        composingText = "";
+        compositionText = "";
+
+        const target = e.target as HTMLInputElement;
+        if (target) target.value = "";
+      }
+    } else if (isVoiced) {
+      // 目標が濁音・半濁音の場合：対応する基本文字のみ許容
+      const baseChar = getBaseChar(targetToken);
+      if (
+        inputText.length > 0 &&
+        inputText !== baseChar &&
+        !inputText.endsWith(baseChar)
+      ) {
+        // 基本文字以外が入力されたのでミス
+        dispatch("error");
+        processingComplete = true;
+        composingText = "";
+        compositionText = "";
+
+        const target = e.target as HTMLInputElement;
+        if (target) target.value = "";
+      }
+    } else if (isSmall) {
+      // 目標が小さい文字の場合：小さい文字のみ許容
+      if (inputText.length > 0 && !isSmallChar(inputText)) {
+        // 小さい文字以外が入力されたのでミス
+        dispatch("error");
+        processingComplete = true;
+        composingText = "";
+        compositionText = "";
+
+        const target = e.target as HTMLInputElement;
+        if (target) target.value = "";
+      }
+    } else {
+      // 目標が基本文字の場合
+      if (inputText === targetToken) {
+        // 基本文字のみ、OK（濁点待ち）
+      } else if (inputText.length > 1) {
+        // 2文字以上で不一致 = 濁点なしで追加入力 = ミス
+        dispatch("error");
+        processingComplete = true;
+        composingText = "";
+        compositionText = "";
+
+        const target = e.target as HTMLInputElement;
+        if (target) target.value = "";
+      } else if (inputText.length === 1 && inputText !== targetToken) {
+        // 1文字で不一致 = ミス
+        dispatch("error");
+        processingComplete = true;
         composingText = "";
         compositionText = "";
 
