@@ -13,6 +13,8 @@
   export let isOnline: boolean = true;
   export let isSubmitting: boolean = false;
   export let isSubmitted: boolean = false;
+  // Optional callback prop to avoid using `on:` event syntax in parent
+  export let onsubmit: ((e: any) => void) | undefined = undefined;
 
   import { base } from "$app/paths";
   const dispatch = createEventDispatcher();
@@ -37,6 +39,8 @@
 
   function handleRegister() {
     dispatch("submit", { username: inputName });
+    // Call optional callback prop for parents that prefer prop callbacks over `on:` event syntax
+    if (onsubmit) onsubmit({ detail: { username: inputName } });
   }
 </script>
 
@@ -89,7 +93,7 @@
           <button
             class="reg-btn"
             disabled={isSubmitting}
-            on:click={handleRegister}
+            onclick={handleRegister}
             >{isSubmitting ? "WAIT..." : "REGISTER"}</button
           >
         </div>

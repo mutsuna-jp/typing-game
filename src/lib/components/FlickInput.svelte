@@ -134,12 +134,8 @@
   autocorrect="off"
   autocapitalize="none"
   spellcheck="false"
-  on:input={handleInput}
-  on:compositionstart={handleCompositionStart}
-  on:compositionupdate={handleCompositionUpdate}
-  on:compositionend={handleCompositionEnd}
-  style="position: absolute; opacity: 0; pointer-events: none;"
+  oninput={handleInput}
+  oncompositionstart={handleCompositionStart}
+  oncompositionupdate={handleCompositionUpdate}
+  oncompositionend={handleCompositionEnd}
 />
-
-<style>
-</style>

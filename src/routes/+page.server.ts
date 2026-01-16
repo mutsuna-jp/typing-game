@@ -198,27 +198,44 @@ export const actions = {
           keyIdx++;
 
           const currToken = tokens[tokenIndex];
-          const nextToken = tokens[tokenIndex + 1];
-          const patterns = KanaEngine.getValidPatterns(currToken, nextToken);
-          const nextBuffer = inputBuffer + key;
-
-          if (patterns.some((p) => p.startsWith(nextBuffer))) {
+          
+          // フリック入力の判定: keyがひらがな1文字でcurrTokenと完全一致
+          const isFlickInput = key.length === 1 && /[\u3040-\u309F]/.test(key);
+          
+          if (isFlickInput && key === currToken) {
+            // フリック入力: ひらがな直接入力
             correctKeys++;
             currentCombo++;
-            inputBuffer = nextBuffer;
+            tokenIndex++;
+            inputBuffer = ""; // フリック入力では常にバッファをクリア
+          } else if (!isFlickInput) {
+            // ローマ字入力: 既存のパターンマッチング
+            const nextToken = tokens[tokenIndex + 1];
+            const patterns = KanaEngine.getValidPatterns(currToken, nextToken);
+            const nextBuffer = inputBuffer + key;
 
-            const isMatch = patterns.includes(inputBuffer);
-            const isN_Ambiguity =
-              currToken === "ん" &&
-              inputBuffer === "n" &&
-              nextToken &&
-              /^[aiueoyn]/.test(KanaEngine.table[nextToken]?.[0]);
+            if (patterns.some((p) => p.startsWith(nextBuffer))) {
+              correctKeys++;
+              currentCombo++;
+              inputBuffer = nextBuffer;
 
-            if (isMatch && !isN_Ambiguity) {
-              tokenIndex++;
-              inputBuffer = "";
+              const isMatch = patterns.includes(inputBuffer);
+              const isN_Ambiguity =
+                currToken === "ん" &&
+                inputBuffer === "n" &&
+                nextToken &&
+                /^[aiueoyn]/.test(KanaEngine.table[nextToken]?.[0]);
+
+              if (isMatch && !isN_Ambiguity) {
+                tokenIndex++;
+                inputBuffer = "";
+              }
+            } else {
+              currentCombo = 0;
+              hasErrorInWord = true;
             }
           } else {
+            // フリック入力だが不一致、またはその他のエラー
             currentCombo = 0;
             hasErrorInWord = true;
           }

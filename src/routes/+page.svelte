@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { fade, scale } from "svelte/transition";
   import type { PageData } from "./$types";
+  import { browser } from "$app/environment";
 
   export let data: PageData;
   let { words: initialWords, top5, userBest } = data;
@@ -38,7 +40,6 @@
 
   // Element refs
   let hiddenInputEl: HTMLInputElement | null = null;
-  let screenEl: HTMLElement | null = null;
 
   import {
     KanaEngine,
@@ -130,12 +131,14 @@
   };
 
   import { base } from "$app/paths";
-  import { replaceState } from "$app/navigation";
+  import { replaceState, goto } from "$app/navigation";
   import WordDisplay from "$lib/components/WordDisplay.svelte";
   import GameReport from "$lib/components/GameReport.svelte";
+  import { isPlaying as isPlayingStore } from "$lib/stores";
 
   // Reactive State
   let isPlaying = false;
+  $: isPlayingStore.set(isPlaying);
   let score = 0;
   let timeLeft = CONFIG.DEFAULT_TIME;
   let startTime = 0;
@@ -169,6 +172,7 @@
 
   // Mobile Input Mode: "flick" or "halfwidth"
   let inputMode: "flick" | "halfwidth" = "flick";
+  let isMobile = false; // モバイル環境かどうか
 
   type Bonus = { id: number; text: string; type: string };
   let scoreBonuses: Bonus[] = [];
@@ -747,6 +751,12 @@
   };
 
   onMount(async () => {
+    // モバイル環境の検出
+    isMobile =
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent
+      ) || window.matchMedia("(max-width: 768px)").matches;
+
     // Load or generate user_id
     userId = localStorage.getItem("typing_game_user_id") || "";
     username = localStorage.getItem("typing_game_username") || "";
@@ -759,10 +769,15 @@
       }
     }
 
-    // Load input mode preference
-    const savedInputMode = localStorage.getItem("typing_game_input_mode");
-    if (savedInputMode === "flick" || savedInputMode === "halfwidth") {
-      inputMode = savedInputMode;
+    // Load input mode preference (モバイルのみ)
+    if (isMobile) {
+      const savedInputMode = localStorage.getItem("typing_game_input_mode");
+      if (savedInputMode === "flick" || savedInputMode === "halfwidth") {
+        inputMode = savedInputMode;
+      }
+    } else {
+      // PC環境では常に半角入力モード
+      inputMode = "halfwidth";
     }
 
     if (!userId) {
@@ -777,11 +792,20 @@
     }
 
     // Update URL if userId is set but not in params (for SSR userBest)
-    const url = new URL(window.location.href);
-    if (!url.searchParams.has("userId")) {
-      url.searchParams.set("userId", userId);
-      replaceState(url.toString(), {});
+    // Defer replaceState to next microtask to ensure router is initialized
+    if (browser) {
+      setTimeout(() => {
+        const url = new URL(window.location.href);
+        if (!url.searchParams.has("userId")) {
+          url.searchParams.set("userId", userId);
+          replaceState(url.toString(), {});
+        }
+      }, 0);
     }
+
+    // Sync local play state to the global store so layout can react
+    isPlayingStore.set(isPlaying);
+
     clickHandler = () => {
       if (isPlaying) hiddenInputEl?.focus();
     };
@@ -862,25 +886,25 @@
     }
 
     const targetToken = currentWord.tokens[tokenIndex];
-    const isSpecial = isSpecialChar(targetToken);
 
-    // 入力を常に表示（特殊文字か基本文字かに関わらず）
+    // 入力を常に表示
     composingText = inputText;
 
     const target = e.target as HTMLInputElement;
 
-    // 一致判定
-    if (inputText === targetToken || inputText.endsWith(targetToken)) {
-      // 一致! 即座に処理
+    // 完全一致 → 正解
+    if (inputText === targetToken) {
       Game.processFlickInput(targetToken);
       clearComposingState(target);
-    } else if (!isSpecial && inputText.length > 0) {
-      // 基本文字で不一致の場合、1文字入力された時点でミス判定
-      const inputChar = inputText.slice(-1);
-      if (inputChar !== targetToken) {
-        Game.inputError();
-        clearComposingState(target);
-      }
+    }
+    // 入力がまだ不完全（targetToken の接頭辞）→ 継続
+    else if (targetToken.startsWith(inputText)) {
+      // 継続入力中、ミス判定なし
+    }
+    // 入力が targetToken の接頭辞でない → ミス判定
+    else if (inputText.length > 0) {
+      Game.inputError();
+      clearComposingState(target);
     }
   }
 
@@ -959,403 +983,454 @@
   }
 </script>
 
-<div id="tv-set">
-  <div id="screen" class:turn-on-anim={!isPlaying} bind:this={screenEl}>
-    <div id="screen-content">
-      <h1 id="title">TV TYPE JP</h1>
+<h1 id="title">TYPEING</h1>
 
-      <div class="info-bar">
-        <span id="score-display-container">
-          <span id="score-display">SCORE: {String(score).padStart(3, "0")}</span
-          >
-          {#each scoreBonuses as bonus (bonus.id)}
-            <span class="score-bonus {bonus.type}">{bonus.text}</span>
-          {/each}
-        </span>
-        <span id="time-display-container">
-          <span
-            id="time-display"
-            class:low-time={timeLeft < 10}
-            style={timeLeft < 10
-              ? "color: oklch(100% 0 0); text-shadow: 0 0 10px oklch(65% 0.2 20);"
-              : ""}
-          >
-            TIME: {timeLeft}
-          </span>
-          {#each timeBonuses as bonus (bonus.id)}
-            <span class="time-bonus {bonus.type}">{bonus.text}</span>
-          {/each}
-        </span>
-      </div>
-
-      <div id="score-rule">
-        SCORE = (LEN x {CONFIG.BASE_SCORE_PER_CHAR}) x (1 + COMBO x {Math.round(
-          CONFIG.COMBO_MULTIPLIER * 100
-        )}%) + [PERFECT: {CONFIG.PERFECT_SCORE_BONUS}]
-      </div>
-
-      {#if gameStats}
-        <GameReport
-          stats={gameStats}
-          {userId}
-          currentUsername={username}
-          isOnline={!isCustomCSV}
-          isSubmitting={isSubmittingRanking}
-          isSubmitted={isRankingSubmitted}
-          on:submit={(e: any) => Game.registerRanking(e.detail.username)}
-        />
-      {:else}
-        <WordDisplay
-          {currentWord}
-          {tokenIndex}
-          {inputBuffer}
-          {composingText}
-          {inputMode}
-          {errorIndex}
-        />
-      {/if}
-
-      {#if !isPlaying && !gameStats}
-        <div class="ranking-preview">
-          <div class="ranking-header">TOP 5 RANKING</div>
-          <div class="rank-list">
-            {#each top5 as entry, i}
-              <div class="rank-item">
-                <span class="rank-num">#{i + 1}</span>
-                <span class="rank-name">{entry.username}</span>
-                <span class="rank-score">{entry.score} pts</span>
-              </div>
-            {/each}
-          </div>
-          {#if userBest}
-            <div class="user-best">
-              YOUR BEST: #{userBest.rank} ({userBest.score} pts / {userBest.kpm}
-              KPM)
-            </div>
-          {/if}
-          <div class="ranking-actions">
-            <button
-              class="btn small subtle"
-              on:click={() => (showProfileModal = true)}
-              >PROFILE & HISTORY</button
-            >
-            <a href="{base}/rankings" class="btn small subtle"
-              >VIEW ALL RANKINGS</a
-            >
-          </div>
-        </div>
-      {/if}
-
-      {#if showProfileModal}
-        <div
-          class="modal-backdrop"
-          role="presentation"
-          on:click={() => (showProfileModal = false)}
-          on:keydown={(e) => e.key === "Escape" && (showProfileModal = false)}
-        >
-          <div
-            class="modal"
-            role="dialog"
-            aria-modal="true"
-            tabindex="-1"
-            on:click|stopPropagation
-            on:keydown|stopPropagation
-          >
-            <h2 style="border-bottom: 2px solid white; padding-bottom: 5px;">
-              PROFILE & HISTORY
-            </h2>
-            <div class="modal-body">
-              <!-- Name Change Section -->
-              <div class="setting-section">
-                <div class="box-label">USER NAME:</div>
-                <div class="input-group">
-                  <input
-                    type="text"
-                    maxlength="20"
-                    bind:value={username}
-                    placeholder="guest"
-                    on:change={() => {
-                      localStorage.setItem("typing_game_username", username);
-                      Game.registerRanking(username);
-                    }}
-                  />
-                  <div class="save-hint">AUTO-SAVES TO RANKING</div>
-                </div>
-              </div>
-
-              <!-- History Section -->
-              <div class="history-section">
-                <div class="box-label">RECENT HISTORY:</div>
-                <div class="history-list">
-                  {#if scoreHistory.length === 0}
-                    <div class="no-history">NO GAMES PLAYED YET</div>
-                  {:else}
-                    <table class="history-table">
-                      <thead>
-                        <tr>
-                          <th>DATE</th>
-                          <th>SCORE</th>
-                          <th>KPM</th>
-                          <th>ACC</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {#each scoreHistory as entry}
-                          <tr>
-                            <td>{new Date(entry.date).toLocaleDateString()}</td>
-                            <td style="color: oklch(85% 0.2 90)"
-                              >{entry.score}</td
-                            >
-                            <td>{entry.kpm}</td>
-                            <td>{entry.accuracy}%</td>
-                          </tr>
-                        {/each}
-                      </tbody>
-                    </table>
-                  {/if}
-                </div>
-              </div>
-
-              <hr
-                style="border: 0; border-top: 1px dashed oklch(45% 0 250); margin: 20px 0;"
-              />
-
-              <!-- Transfer Section (Hidden by default to keep it clean) -->
-              <details class="transfer-details">
-                <summary
-                  >DATA TRANSFER (ID: {userId.substring(0, 8)}...)</summary
-                >
-                <div class="transfer-box">
-                  <div class="box-label">YOUR TRANSFER ID:</div>
-                  <div class="id-display">{userId}</div>
-                  <button
-                    class="btn small"
-                    on:click={() => navigator.clipboard.writeText(userId)}
-                    >COPY ID</button
-                  >
-                </div>
-                <div class="import-box">
-                  <div class="box-label">IMPORT TRANSFER ID:</div>
-                  <input
-                    type="text"
-                    bind:value={transferInput}
-                    placeholder="usr_..."
-                    style="width: 100%; margin-bottom: 10px;"
-                  />
-                  <button
-                    class="btn small"
-                    on:click={() => Game.importTransferId()}
-                    >IMPORT & RELOAD</button
-                  >
-                </div>
-              </details>
-            </div>
-            <div class="modal-actions">
-              <button
-                class="btn small subtle"
-                on:click={() => (showProfileModal = false)}>CLOSE</button
-              >
-            </div>
-          </div>
-        </div>
-      {/if}
-
-      <div id="message">{message}</div>
-      {#if !isPlaying && !gameStats}
-        <div
-          id="file-status"
-          style="color: {isFileError
-            ? 'oklch(65% 0.25 20)'
-            : 'oklch(80% 0.2 160)'}"
-        >
-          {fileStatus}
-          <span
-            style="font-size: 0.7rem; margin-left:10px; opacity: 0.8; color: {isCustomCSV
-              ? 'oklch(65% 0.2 40)'
-              : 'oklch(80% 0.2 160)'}"
-          >
-            [{isCustomCSV ? "CUSTOM / OFFLINE" : "OFFICIAL / ONLINE"}]
-          </span>
-          {#if lastErrors.length > 0}
-            <button
-              id="show-errors-btn"
-              class="btn small subtle"
-              on:click={() => (showErrorList = true)}
-              style="margin-left:10px;"
-              aria-label="Show CSV errors"
-            >
-              Errors ({lastErrors.length})
-            </button>
-          {/if}
-        </div>
-      {/if}
-
-      <div
-        id="controls-container"
-        style="display: {!isPlaying ? 'block' : 'none'}"
+{#if isPlaying || gameStats}
+  <div class="info-bar">
+    <span id="score-display-container">
+      <span id="score-display">SCORE: {String(score).padStart(3, "0")}</span>
+      {#each scoreBonuses as bonus (bonus.id)}
+        <span class="score-bonus {bonus.type}">{bonus.text}</span>
+      {/each}
+    </span>
+    <span id="time-display-container">
+      <span
+        id="time-display"
+        class:low-time={timeLeft < 10}
+        style={timeLeft < 10
+          ? "color: oklch(100% 0 0); text-shadow: 0 0 10px oklch(65% 0.2 20);"
+          : ""}
       >
-        {#if !gameStats}
-          <label for="csv-input" class="btn file-btn">LOAD CSV</label>
-          <input
-            type="file"
-            id="csv-input"
-            accept=".csv"
-            style="display:none"
-            on:change={(e) => Game.handleFile(e)}
-          />
-        {/if}
-        <button
-          id="start-btn"
-          class="btn"
-          disabled={!isStartEnabled || isPreparing}
-          class:disabled={!isStartEnabled || isPreparing}
-          on:click={() => Game.start()}
-        >
-          {gameStats ? "RETRY" : isPreparing ? "LOADING..." : "START GAME"}
-        </button>
-        <button
-          class="btn input-mode-toggle"
-          on:click={toggleInputMode}
-          title="入力モード切替"
-        >
-          {inputMode === "flick" ? "📱 フリック入力" : "🔤 半角入力"}
-        </button>
-      </div>
-
-      {#if showErrorList}
-        <div
-          class="modal-backdrop"
-          role="presentation"
-          on:click={() => (showErrorList = false)}
-          on:keydown={(e) => e.key === "Escape" && (showErrorList = false)}
-        >
-          <div
-            class="modal"
-            role="dialog"
-            aria-modal="true"
-            tabindex="-1"
-            on:click|stopPropagation
-            on:keydown|stopPropagation
-          >
-            <h2>CSV Error List</h2>
-            <div class="modal-body">
-              <ul>
-                {#each lastErrors as err}
-                  <li>{err}</li>
-                {/each}
-              </ul>
-            </div>
-            <div class="modal-actions">
-              <button class="btn" on:click={() => (showErrorList = false)}
-                >Close</button
-              >
-            </div>
-          </div>
-        </div>
-      {/if}
-
-      <input
-        type="text"
-        id="hidden-input"
-        inputmode={inputMode === "flick" ? undefined : "text"}
-        lang={inputMode === "flick" ? "ja" : "en"}
-        autocomplete="off"
-        autocorrect="off"
-        autocapitalize="none"
-        spellcheck="false"
-        bind:this={hiddenInputEl}
-        on:input={handleHiddenInput}
-        on:compositionstart={handleCompositionStart}
-        on:compositionupdate={handleCompositionUpdate}
-        on:compositionend={handleCompositionEnd}
-      />
-    </div>
+        TIME: {timeLeft}
+      </span>
+      {#each timeBonuses as bonus (bonus.id)}
+        <span class="time-bonus {bonus.type}">{bonus.text}</span>
+      {/each}
+    </span>
   </div>
+{/if}
+
+<div id="score-rule">
+  SCORE = (LEN x {CONFIG.BASE_SCORE_PER_CHAR}) x (1 + COMBO x {Math.round(
+    CONFIG.COMBO_MULTIPLIER * 100
+  )}%) + [PERFECT: {CONFIG.PERFECT_SCORE_BONUS}]
 </div>
 
+{#if gameStats}
+  <div transition:fade={{ duration: 300 }}>
+    <GameReport
+      stats={gameStats}
+      {userId}
+      currentUsername={username}
+      isOnline={!isCustomCSV}
+      isSubmitting={isSubmittingRanking}
+      isSubmitted={isRankingSubmitted}
+      onsubmit={(e: any) => Game.registerRanking(e.detail.username)}
+    />
+  </div>
+{:else}
+  <div transition:fade={{ duration: 300 }}>
+    <WordDisplay
+      {currentWord}
+      {tokenIndex}
+      {inputBuffer}
+      {composingText}
+      {inputMode}
+      {errorIndex}
+    />
+  </div>
+{/if}
+
+{#if !isPlaying && !gameStats}
+  <div class="ranking-preview" transition:fade={{ duration: 300 }}>
+    <div class="ranking-header">TOP 5 RANKING</div>
+    <div class="rank-list">
+      {#each top5 as entry, i}
+        <div
+          class="rank-item"
+          transition:fade={{ duration: 200, delay: i * 50 }}
+        >
+          <span class="rank-num">#{i + 1}</span>
+          <span class="rank-name">{entry.username}</span>
+          <span class="rank-score">{entry.score} pts</span>
+        </div>
+      {/each}
+    </div>
+    {#if userBest}
+      <div class="user-best">
+        YOUR BEST: #{userBest.rank} ({userBest.score} pts / {userBest.kpm}
+        KPM)
+      </div>
+    {/if}
+    <div class="ranking-actions">
+      <button class="btn small subtle" onclick={() => (showProfileModal = true)}
+        >PROFILE & HISTORY</button
+      >
+      <button class="btn small subtle" onclick={() => goto(`${base}/rankings`)}
+        >VIEW ALL RANKINGS</button
+      >
+    </div>
+  </div>
+{/if}
+
+{#if showProfileModal}
+  <div
+    class="modal-backdrop"
+    role="presentation"
+    onclick={() => (showProfileModal = false)}
+    onkeydown={(e) => e.key === "Escape" && (showProfileModal = false)}
+    transition:fade={{ duration: 200 }}
+  >
+    <div
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+      transition:scale={{ duration: 300, start: 0.95 }}
+    >
+      <h2 style="border-bottom: 2px solid white; padding-bottom: 5px;">
+        PROFILE & HISTORY
+      </h2>
+      <div class="modal-body">
+        <!-- Name Change Section -->
+        <div class="setting-section">
+          <div class="box-label">USER NAME:</div>
+          <div class="input-group">
+            <input
+              type="text"
+              maxlength="20"
+              bind:value={username}
+              placeholder="guest"
+              onchange={() => {
+                localStorage.setItem("typing_game_username", username);
+                Game.registerRanking(username);
+              }}
+            />
+            <div class="save-hint">AUTO-SAVES TO RANKING</div>
+          </div>
+        </div>
+
+        <!-- History Section -->
+        <div class="history-section">
+          <div class="box-label">RECENT HISTORY:</div>
+          <div class="history-list">
+            {#if scoreHistory.length === 0}
+              <div class="no-history">NO GAMES PLAYED YET</div>
+            {:else}
+              <table class="history-table">
+                <thead>
+                  <tr>
+                    <th>DATE</th>
+                    <th>SCORE</th>
+                    <th>KPM</th>
+                    <th>ACC</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each scoreHistory as entry}
+                    <tr>
+                      <td>{new Date(entry.date).toLocaleDateString()}</td>
+                      <td style="color: oklch(85% 0.2 90)">{entry.score}</td>
+                      <td>{entry.kpm}</td>
+                      <td>{entry.accuracy}%</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </div>
+        </div>
+
+        <hr
+          style="border: 0; border-top: 1px dashed oklch(45% 0 250); margin: 20px 0;"
+        />
+
+        <!-- Transfer Section (Hidden by default to keep it clean) -->
+        <details class="transfer-details">
+          <summary>DATA TRANSFER (ID: {userId.substring(0, 8)}...)</summary>
+          <div class="transfer-box">
+            <div class="box-label">YOUR TRANSFER ID:</div>
+            <div class="id-display">{userId}</div>
+            <button
+              class="btn small"
+              onclick={() => navigator.clipboard.writeText(userId)}
+              >COPY ID</button
+            >
+          </div>
+          <div class="import-box">
+            <div class="box-label">IMPORT TRANSFER ID:</div>
+            <input
+              type="text"
+              bind:value={transferInput}
+              placeholder="usr_..."
+              style="width: 100%; margin-bottom: 10px;"
+            />
+            <button class="btn small" onclick={() => Game.importTransferId()}
+              >IMPORT & RELOAD</button
+            >
+          </div>
+        </details>
+      </div>
+      <div class="modal-actions">
+        <button
+          class="btn small subtle"
+          onclick={() => (showProfileModal = false)}>CLOSE</button
+        >
+      </div>
+    </div>
+  </div>
+{/if}
+
+<div id="message">{message}</div>
+{#if !isPlaying && !gameStats}
+  <div
+    id="file-status"
+    style="color: {isFileError ? 'oklch(65% 0.25 20)' : 'oklch(80% 0.2 160)'}"
+  >
+    <span style="text-align: center;">
+      {fileStatus}
+      <span
+        style="font-size: 0.7rem; margin-left:10px; opacity: 0.8; color: {isCustomCSV
+          ? 'oklch(65% 0.2 40)'
+          : 'oklch(80% 0.2 160)'}"
+      >
+        [{isCustomCSV ? "CUSTOM / OFFLINE" : "OFFICIAL / ONLINE"}]
+      </span>
+    </span>
+    {#if lastErrors.length > 0}
+      <button
+        id="show-errors-btn"
+        class="btn small subtle"
+        onclick={() => (showErrorList = true)}
+        aria-label="Show CSV errors"
+      >
+        Errors ({lastErrors.length})
+      </button>
+    {/if}
+  </div>
+{/if}
+
+<div id="controls-container" style="display: {!isPlaying ? 'block' : 'none'}">
+  {#if !gameStats}
+    <label for="csv-input" class="btn file-btn">LOAD CSV</label>
+    <input
+      type="file"
+      id="csv-input"
+      accept=".csv"
+      style="display:none"
+      onchange={(e) => Game.handleFile(e)}
+    />
+  {/if}
+  <button
+    id="start-btn"
+    class="btn"
+    disabled={!isStartEnabled || isPreparing}
+    class:disabled={!isStartEnabled || isPreparing}
+    onclick={() => Game.start()}
+  >
+    {gameStats ? "RETRY" : isPreparing ? "LOADING..." : "START GAME"}
+  </button>
+  {#if isMobile}
+    <button
+      class="btn input-mode-toggle"
+      onclick={toggleInputMode}
+      title="入力モード切替"
+    >
+      {inputMode === "flick" ? "FLICK INPUT" : "HALFWIDTH INPUT"}
+    </button>
+  {/if}
+</div>
+
+{#if showErrorList}
+  <div
+    class="modal-backdrop"
+    role="presentation"
+    onclick={() => (showErrorList = false)}
+    onkeydown={(e) => e.key === "Escape" && (showErrorList = false)}
+    transition:fade={{ duration: 200 }}
+  >
+    <div
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+      transition:scale={{ duration: 300, start: 0.95 }}
+    >
+      <h2>CSV Error List</h2>
+      <div class="modal-body">
+        <ul>
+          {#each lastErrors as err}
+            <li>{err}</li>
+          {/each}
+        </ul>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick={() => (showErrorList = false)}
+          >Close</button
+        >
+      </div>
+    </div>
+  </div>
+{/if}
+
+<input
+  type="text"
+  id="hidden-input"
+  inputmode={inputMode === "flick" ? undefined : "text"}
+  lang={inputMode === "flick" ? "ja" : "en"}
+  autocomplete="off"
+  autocorrect="off"
+  autocapitalize="none"
+  spellcheck="false"
+  bind:this={hiddenInputEl}
+  oninput={handleHiddenInput}
+  oncompositionstart={handleCompositionStart}
+  oncompositionupdate={handleCompositionUpdate}
+  oncompositionend={handleCompositionEnd}
+/>
+
 <style>
-  /* --- Base & Reset --- */
-  * {
-    box-sizing: border-box;
-    user-select: none;
-    -webkit-user-select: none;
-  }
-
-  /* --- The TV Set (Container) --- */
-  #tv-set {
-    position: relative;
-    width: 100vw;
-    height: 100vh;
-    height: 100dvh;
+  /* Modal for CSV error list and PROFILE/HISTORY modal */
+  :global(.modal-backdrop) {
+    position: fixed;
+    inset: 0;
     display: flex;
-    justify-content: center;
     align-items: center;
-    background: oklch(15% 0.01 250);
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 50;
+    padding: 20px;
   }
-
-  /* --- The Screen (CRT Effect) --- */
-  #screen {
-    position: relative;
-    width: 90%;
-    height: 90%;
-    max-width: 1000px;
-    max-height: 800px;
-    background-color: oklch(20% 0.02 250);
-    border-radius: 50% / 10%;
+  :global(.modal) {
+    background: oklch(20% 0.02 250);
+    border: 4px solid oklch(100% 0 0);
+    padding: 20px;
+    max-width: 600px;
+    width: 100%;
+    max-height: 70vh;
+    overflow: auto;
+    text-align: left;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.6);
+  }
+  :global(.modal h2) {
+    margin-top: 0;
+  }
+  :global(.modal-body ul) {
+    padding-left: 1rem;
+    margin: 0;
+  }
+  :global(.modal-body li) {
+    margin-bottom: 6px;
+    font-family: monospace;
+    white-space: nowrap;
     overflow: hidden;
-    box-shadow: inset 0 0 100px oklch(0% 0 0 / 0.9);
-    border: 20px solid oklch(25% 0.02 250);
-    transform: perspective(1000px) rotateX(1deg);
-  }
-  #screen::before {
-    content: " ";
-    display: block;
-    position: absolute;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    right: 0;
-    background: linear-gradient(oklch(0% 0 0 / 0) 50%, oklch(0% 0 0 / 0.25) 50%),
-      linear-gradient(
-        90deg,
-        oklch(60% 0.15 20 / 0.06),
-        oklch(60% 0.15 140 / 0.02),
-        oklch(60% 0.15 260 / 0.06)
-      );
-    z-index: 10;
-    background-size:
-      100% 2px,
-      3px 100%;
-    pointer-events: none;
+    text-overflow: ellipsis;
   }
 
-  /* Screen Glow & Flicker */
-  #screen-content {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: radial-gradient(
-      circle,
-      oklch(90% 0.02 250 / 0.1) 0%,
-      oklch(0% 0 0 / 0.8) 90%
-    );
+  :global(.transfer-box),
+  :global(.import-box) {
+    margin-top: 15px;
+    padding: 10px;
+    border: 1px solid oklch(45% 0 250);
+    background: oklch(10% 0 0 / 0.3);
+  }
+
+  :global(.box-label) {
+    font-size: 0.7rem;
+    color: oklch(45% 0 250);
+    margin-bottom: 5px;
+  }
+
+  :global(.id-display) {
+    font-family: monospace;
+    font-size: 0.7rem;
+    background: black;
+    color: oklch(85% 0.2 90);
+    padding: 10px;
+    word-break: break-all;
+    margin-bottom: 5px;
+    border: 1px solid oklch(25% 0 250);
+  }
+
+  :global(.modal-actions) {
+    margin-top: 12px;
+    text-align: right;
+  }
+  :global(.btn.small) {
+    padding: 6px 10px;
+    font-size: 0.9rem;
+  }
+
+  /* --- Profile Modal Styles --- */
+  :global(.setting-section),
+  :global(.history-section) {
+    margin-bottom: 20px;
+    text-align: left;
+  }
+  :global(.input-group) {
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    text-align: center;
-    z-index: 5;
+    gap: 5px;
+  }
+  :global(.save-hint) {
+    font-size: 0.6rem;
+    color: oklch(50% 0.1 150);
+    letter-spacing: 1px;
+  }
+  :global(.history-list) {
+    margin-top: 10px;
+    background: oklch(10% 0 0 / 0.5);
+    border: 1px solid oklch(25% 0 250);
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  :global(.history-table) {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+  }
+  :global(.history-table th) {
+    font-size: 0.6rem;
+    padding: 5px;
+    text-align: left;
+    border-bottom: 1px solid oklch(45% 0 250);
+    color: oklch(45% 0 250);
+  }
+  :global(.history-table td) {
+    padding: 5px;
+    border-bottom: 1px dashed oklch(20% 0 250);
+  }
+  :global(.no-history) {
     padding: 20px;
-    animation: flicker 0.15s infinite;
-    text-shadow:
-      0 0 4px oklch(100% 0 0 / 0.6),
-      2px 2px 0 oklch(0% 0 0 / 0.5);
+    font-size: 0.8rem;
+    color: oklch(35% 0 250);
+    text-align: center;
+  }
+  :global(.transfer-details) {
+    font-size: 0.8rem;
+    color: oklch(45% 0 250);
+  }
+  :global(.transfer-details summary) {
+    cursor: pointer;
+    padding: 5px 0;
+    transition: color 0.2s;
+  }
+  :global(.transfer-details summary:hover) {
+    color: white;
+  }
+  :global(.ranking-actions) {
+    margin-top: 10px;
+    display: flex;
+    gap: 5px;
+    justify-content: center;
   }
 
   /* --- Typography & Elements --- */
-  h1 {
+  :global(h1) {
     font-size: 3rem;
     margin: 0 0 10px 0;
     letter-spacing: 5px;
@@ -1364,7 +1439,7 @@
     padding-bottom: 5px;
   }
 
-  .info-bar {
+  :global(.info-bar) {
     display: flex;
     justify-content: space-between;
     width: 80%;
@@ -1377,7 +1452,7 @@
   }
 
   /* スコア計算式表示のスタイル調整 */
-  #score-rule {
+  :global(#score-rule) {
     font-size: 0.8rem;
     color: oklch(65% 0.01 250);
     margin-bottom: 10px;
@@ -1390,8 +1465,39 @@
   }
 
   /* Animations & Effects */
-  .time-bonus,
-  .score-bonus {
+  @keyframes floatUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(-60px);
+    }
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes scaleIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  :global(.time-bonus),
+  :global(.score-bonus) {
     position: absolute;
     font-weight: bold;
     font-size: 1.2rem;
@@ -1400,33 +1506,33 @@
     white-space: nowrap;
     z-index: 20;
   }
-  .time-bonus {
+  :global(.time-bonus) {
     right: 0;
     top: -30px;
     color: oklch(80% 0.2 160);
   }
-  .time-bonus.perfect {
+  :global(.time-bonus.perfect) {
     color: oklch(80% 0.2 190);
     text-shadow: 0 0 5px oklch(80% 0.2 190);
     font-size: 1.4rem;
   }
-  .time-bonus.error {
+  :global(.time-bonus.error) {
     color: oklch(65% 0.2 20);
     text-shadow: 0 0 5px oklch(65% 0.2 20 / 0.8);
   }
-  .score-bonus {
+  :global(.score-bonus) {
     left: 0;
     top: -30px;
     color: oklch(85% 0.2 90);
   }
 
-  #message {
+  :global(#message) {
     font-size: 1.5rem;
     margin-top: 10px;
     min-height: 2rem;
   }
 
-  .ranking-preview {
+  :global(.ranking-preview) {
     margin-top: 20px;
     width: 60%;
     border: 1px solid oklch(45% 0 250);
@@ -1434,30 +1540,30 @@
     background: oklch(10% 0 0 / 0.5);
   }
 
-  .ranking-header {
+  :global(.ranking-header) {
     font-size: 0.9rem;
     color: oklch(45% 0 250);
     margin-bottom: 5px;
     border-bottom: 1px solid oklch(45% 0 250);
   }
 
-  .rank-list {
+  :global(.rank-list) {
     text-align: left;
     font-size: 1rem;
   }
 
-  .rank-item {
+  :global(.rank-item) {
     display: flex;
     justify-content: space-between;
     margin: 2px 0;
   }
 
-  .rank-num {
+  :global(.rank-num) {
     color: oklch(75% 0 0);
     width: 30px;
   }
 
-  .rank-name {
+  :global(.rank-name) {
     flex: 1;
     color: oklch(100% 0 0);
     white-space: nowrap;
@@ -1465,11 +1571,11 @@
     text-overflow: ellipsis;
   }
 
-  .rank-score {
+  :global(.rank-score) {
     color: oklch(85% 0.2 90);
   }
 
-  .user-best {
+  :global(.user-best) {
     margin-top: 10px;
     font-size: 0.8rem;
     color: oklch(80% 0.2 160);
@@ -1477,7 +1583,7 @@
     padding-top: 5px;
   }
 
-  .btn {
+  :global(.btn) {
     background: transparent;
     border: 2px solid oklch(100% 0 0);
     color: oklch(100% 0 0);
@@ -1493,28 +1599,28 @@
     display: inline-block;
     text-decoration: none;
   }
-  .btn:hover,
-  .btn:focus {
+  :global(.btn:hover),
+  :global(.btn:focus) {
     background: oklch(100% 0 0);
     color: oklch(0% 0 0);
     box-shadow: 0 0 20px oklch(100% 0 0 / 0.8);
   }
-  .btn[disabled],
-  .btn.disabled {
+  :global(.btn[disabled]),
+  :global(.btn.disabled) {
     opacity: 0.5;
     cursor: not-allowed;
     pointer-events: none;
     filter: grayscale(40%);
   }
 
-  .file-btn {
+  :global(.file-btn) {
     font-size: 1.2rem;
     padding: 10px 30px;
     border-style: dashed;
     margin-bottom: 20px;
   }
 
-  #controls-container {
+  :global(#controls-container) {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1522,269 +1628,28 @@
     width: 100%;
   }
 
-  .input-mode-toggle {
+  :global(.input-mode-toggle) {
     font-size: 1rem;
     padding: 8px 20px;
     margin-top: 5px;
-    border-color: oklch(70% 0.15 200);
-    color: oklch(70% 0.15 200);
-    box-shadow: 0 0 8px oklch(70% 0.15 200 / 0.4);
   }
 
-  .input-mode-toggle:hover,
-  .input-mode-toggle:focus {
-    background: oklch(70% 0.15 200);
+  :global(.input-mode-toggle:hover),
+  :global(.input-mode-toggle:focus) {
+    background: oklch(100% 0 0);
     color: oklch(0% 0 0);
-    box-shadow: 0 0 15px oklch(70% 0.15 200 / 0.7);
-  }
-
-  #file-status {
-    font-size: 1rem;
-    color: oklch(80% 0.2 160);
-    min-height: 1.5rem;
-    margin-bottom: 10px;
-  }
-  #hidden-input {
-    position: absolute;
-    opacity: 0;
-    top: -1000px;
-  }
-
-  @keyframes floatUp {
-    0% {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    100% {
-      opacity: 0;
-      transform: translateY(-20px);
-    }
-  }
-  @keyframes flicker {
-    0% {
-      opacity: 0.95;
-    }
-    5% {
-      opacity: 0.85;
-    }
-    10% {
-      opacity: 0.95;
-    }
-    15% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.95;
-    }
-    100% {
-      opacity: 0.95;
-    }
-  }
-  @keyframes blink-caret {
-    0%,
-    100% {
-      border-bottom: 4px solid transparent;
-    }
-    50% {
-      border-bottom: 4px solid oklch(100% 0 0);
-    }
-  }
-  @keyframes shake {
-    0%,
-    100% {
-      transform: translateX(0);
-    }
-    25%,
-    75% {
-      transform: translateX(-5px);
-    }
-    50% {
-      transform: translateX(5px);
-    }
-  }
-  @keyframes turn-on {
-    0% {
-      transform: scale(1, 0.01);
-      filter: brightness(3);
-    }
-    60% {
-      transform: scale(1, 1);
-      filter: brightness(1);
-    }
-    100% {
-      transform: scale(1, 1);
-      filter: brightness(1);
-    }
-  }
-  .turn-on-anim {
-    animation: turn-on 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards;
-  }
-
-  /* Modal for CSV error list */
-  .modal-backdrop {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 50;
-    padding: 20px;
-  }
-  .modal {
-    background: oklch(20% 0.02 250);
-    border: 4px solid oklch(100% 0 0);
-    padding: 20px;
-    max-width: 600px;
-    width: 100%;
-    max-height: 70vh;
-    overflow: auto;
-    text-align: left;
-    box-shadow: 0 0 30px rgba(0, 0, 0, 0.6);
-  }
-  .modal h2 {
-    margin-top: 0;
-  }
-  .modal-body ul {
-    padding-left: 1rem;
-    margin: 0;
-  }
-  .modal-body li {
-    margin-bottom: 6px;
-    font-family: monospace;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .transfer-box,
-  .import-box {
-    margin-top: 15px;
-    padding: 10px;
-    border: 1px solid oklch(45% 0 250);
-    background: oklch(10% 0 0 / 0.3);
-  }
-
-  .box-label {
-    font-size: 0.7rem;
-    color: oklch(45% 0 250);
-    margin-bottom: 5px;
-  }
-
-  .id-display {
-    font-family: monospace;
-    font-size: 0.7rem;
-    background: black;
-    color: oklch(85% 0.2 90);
-    padding: 10px;
-    word-break: break-all;
-    margin-bottom: 5px;
-    border: 1px solid oklch(25% 0 250);
-  }
-
-  .modal-actions {
-    margin-top: 12px;
-    text-align: right;
-  }
-  .btn.small {
-    padding: 6px 10px;
-    font-size: 0.9rem;
-  }
-
-  /* Subtle variant for less prominent buttons (e.g., CSV errors) */
-  .btn.subtle,
-  .btn.small.subtle {
-    border-color: oklch(55% 0.01 250);
-    color: oklch(55% 0.01 250);
-    box-shadow: none;
-    background: transparent;
-    transition:
-      background 0.15s,
-      color 0.15s,
-      box-shadow 0.15s;
-  }
-  .btn.subtle:hover,
-  .btn.small.subtle:hover,
-  .btn.subtle:focus,
-  .btn.small.subtle:focus {
-    background: oklch(55% 0.01 250 / 0.06);
-    color: oklch(100% 0 0);
-    box-shadow: none;
-  }
-
-  /* --- Profile Modal Styles --- */
-  .setting-section,
-  .history-section {
-    margin-bottom: 20px;
-    text-align: left;
-  }
-  .input-group {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-  }
-  .save-hint {
-    font-size: 0.6rem;
-    color: oklch(50% 0.1 150);
-    letter-spacing: 1px;
-  }
-  .history-list {
-    margin-top: 10px;
-    background: oklch(10% 0 0 / 0.5);
-    border: 1px solid oklch(25% 0 250);
-    max-height: 200px;
-    overflow-y: auto;
-  }
-  .history-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.8rem;
-  }
-  .history-table th {
-    font-size: 0.6rem;
-    padding: 5px;
-    text-align: left;
-    border-bottom: 1px solid oklch(45% 0 250);
-    color: oklch(45% 0 250);
-  }
-  .history-table td {
-    padding: 5px;
-    border-bottom: 1px dashed oklch(20% 0 250);
-  }
-  .no-history {
-    padding: 20px;
-    font-size: 0.8rem;
-    color: oklch(35% 0 250);
-    text-align: center;
-  }
-  .transfer-details {
-    font-size: 0.8rem;
-    color: oklch(45% 0 250);
-  }
-  .transfer-details summary {
-    cursor: pointer;
-    padding: 5px 0;
-    transition: color 0.2s;
-  }
-  .transfer-details summary:hover {
-    color: white;
-  }
-  .ranking-actions {
-    margin-top: 10px;
-    display: flex;
-    gap: 5px;
-    justify-content: center;
+    box-shadow: 0 0 20px oklch(100% 0 0 / 0.8);
   }
 
   @media (max-width: 600px) {
-    #tv-set {
+    :global(#tv-set) {
       align-items: flex-start;
       padding: 0;
       overflow-y: auto;
       overflow-x: hidden;
     }
 
-    #screen {
+    :global(#screen) {
       width: 100%;
       height: auto;
       min-height: 100vh;
@@ -1797,22 +1662,22 @@
       box-shadow: none;
     }
 
-    #screen-content {
+    :global(#screen-content) {
       padding: 15px;
       min-height: 100vh;
       min-height: 100dvh;
       justify-content: flex-start;
       padding-top: 20px;
-      padding-bottom: 60vh; /* キーボード表示時のスペース確保 */
+      padding-bottom: 60vh;
     }
 
-    h1 {
+    :global(h1) {
       font-size: 1.8rem;
       letter-spacing: 3px;
       margin-bottom: 15px;
     }
 
-    .info-bar {
+    :global(.info-bar) {
       font-size: 1rem;
       width: 100%;
       padding: 8px 0;
@@ -1820,18 +1685,18 @@
       gap: 5px;
     }
 
-    #score-display-container,
-    #time-display-container {
+    :global(#score-display-container),
+    :global(#time-display-container) {
       flex: 1 1 45%;
       min-width: 120px;
     }
 
-    #score-rule {
+    :global(#score-rule) {
       font-size: 0.65rem;
       width: 100%;
     }
 
-    .btn {
+    :global(.btn) {
       padding: 12px 30px;
       font-size: 1.2rem;
       margin-top: 5px;
@@ -1840,13 +1705,13 @@
       min-width: 200px;
     }
 
-    .btn.small {
+    :global(.btn.small) {
       padding: 8px 15px;
       font-size: 0.85rem;
       min-width: auto;
     }
 
-    .file-btn {
+    :global(.file-btn) {
       font-size: 1rem;
       padding: 10px 25px;
       margin-bottom: 5px;
@@ -1854,45 +1719,43 @@
       min-width: 200px;
     }
 
-    #controls-container {
+    :global(#controls-container) {
       gap: 5px;
       margin-top: 10px;
     }
 
-    #message {
+    :global(#message) {
       font-size: 1.2rem;
       margin-top: 8px;
     }
 
-    .ranking-preview {
+    :global(.ranking-preview) {
       width: 95%;
       padding: 8px;
       margin-top: 15px;
     }
 
-    .rank-list {
+    :global(.rank-list) {
       font-size: 0.9rem;
     }
 
-    .modal {
+    :global(.modal) {
       max-width: 95%;
       padding: 15px;
       max-height: 80vh;
     }
 
-    .modal h2 {
+    :global(.modal h2) {
       font-size: 1.3rem;
     }
 
-    /* タッチ操作の改善 */
-    .btn,
-    button,
-    label {
+    :global(.btn),
+    :global(button),
+    :global(label) {
       -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);
     }
 
-    /* スクロール時のパフォーマンス改善 */
-    #tv-set {
+    :global(#tv-set) {
       -webkit-overflow-scrolling: touch;
     }
   }
