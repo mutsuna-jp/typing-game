@@ -40,7 +40,46 @@ export const voicedMap: Record<string, string> = {
   ゔ: "う",
 };
 
+// 清音から濁音へのマッピング（段階的な濁音化パターンに対応）
+// 例：た（入力）→ だ（中間）→ ど（目標）
+export const clearToVoicedMap: Record<string, string> = {
+  // か行 → が行
+  か: "が",
+  き: "ぎ",
+  く: "ぐ",
+  け: "げ",
+  こ: "ご",
+  // さ行 → ざ行
+  さ: "ざ",
+  し: "じ",
+  す: "ず",
+  せ: "ぜ",
+  そ: "ぞ",
+  // た行 → だ行
+  た: "だ",
+  ち: "ぢ",
+  つ: "づ",
+  て: "で",
+  と: "ど",
+  // は行 → ば行
+  は: "ば",
+  ひ: "び",
+  ふ: "ぶ",
+  へ: "べ",
+  ほ: "ぼ",
+};
+
+// 濁音から半濁音へのマッピング（ば行→ぱ行の中間状態）
+export const voicedToSemiMap: Record<string, string> = {
+  ば: "ぱ",
+  び: "ぴ",
+  ぶ: "ぷ",
+  べ: "ぺ",
+  ぼ: "ぽ",
+};
+
 // 半濁音から対応する濁音へのマッピング（フリック変換の中間状態）
+// 注：voicedToSemiMapの逆方向。半濁音（ぱゃ）→濁音（びゃ）の中間状態を定義
 export const semiToVoiced: Record<string, string> = {
   ぱ: "ば",
   ぴ: "び",

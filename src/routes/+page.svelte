@@ -95,7 +95,7 @@
       freq: number,
       type: OscillatorType | string,
       duration: number,
-      vol: number
+      vol: number,
     ) {
       if (!this.ctx) return;
       const osc = this.ctx.createOscillator();
@@ -105,7 +105,7 @@
       gain.gain.setValueAtTime(vol, this.ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(
         0.01,
-        this.ctx.currentTime + duration
+        this.ctx.currentTime + duration,
       );
       osc.connect(gain);
       gain.connect(this.ctx.destination);
@@ -242,7 +242,7 @@
         const word = getNextWordSeeded(
           this.activeList,
           elapsedTime,
-          this.gamePRNG
+          this.gamePRNG,
         );
         return { ...word, tokens: KanaEngine.tokenize(word.kana) };
       }
@@ -393,7 +393,7 @@
             // Fallback: pick an object with numeric seed, or reconstruct
             const obj = gameObj.find(
               (el: any) =>
-                el && typeof el === "object" && typeof el.seed === "number"
+                el && typeof el === "object" && typeof el.seed === "number",
             );
             if (obj) {
               // If the object contains a numeric small 'gameId' (legacy), prefer string id if available
@@ -402,7 +402,7 @@
             } else {
               if (numSeed !== undefined) {
                 const possibleGameId = gameObj.find(
-                  (el: any) => typeof el === "string" || typeof el === "number"
+                  (el: any) => typeof el === "string" || typeof el === "number",
                 );
                 gameObj = {
                   gameId:
@@ -665,7 +665,7 @@
             gameId: currentGameId,
             userId,
             username,
-          })
+          }),
         );
 
         const response = await fetch("?/submitScore", {
@@ -716,7 +716,7 @@
           JSON.stringify({
             userId,
             username: newName,
-          })
+          }),
         );
 
         const response = await fetch("?/registerName", {
@@ -753,13 +753,13 @@
         transferInput.length !== 64
       ) {
         alert(
-          "Invalid Transfer ID. Must start with 'usr_' and be 64 characters."
+          "Invalid Transfer ID. Must start with 'usr_' and be 64 characters.",
         );
         return;
       }
       if (
         confirm(
-          "Importing this ID will overwrite your current progress. Continue?"
+          "Importing this ID will overwrite your current progress. Continue?",
         )
       ) {
         localStorage.setItem("typing_game_user_id", transferInput);
@@ -909,7 +909,7 @@
 
       <div id="score-rule">
         SCORE = (LEN x {CONFIG.BASE_SCORE_PER_CHAR}) x (1 + COMBO x {Math.round(
-          CONFIG.COMBO_MULTIPLIER * 100
+          CONFIG.COMBO_MULTIPLIER * 100,
         )}%) + [PERFECT: {CONFIG.PERFECT_SCORE_BONUS}]
       </div>
 
@@ -1180,8 +1180,8 @@
           {currentWord}
           {tokenIndex}
           bind:composingText
-          on:correct={handleFlickInputCorrect}
-          on:error={handleFlickInputError}
+          oncorrect={(e) => Game.processFlickInput(e.key)}
+          onerror={() => Game.inputError()}
         />
       {:else}
         <HalfwidthInput

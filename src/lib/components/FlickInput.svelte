@@ -1,20 +1,30 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
   import {
     voicedMap,
     semiToVoiced,
+    clearToVoicedMap,
+    voicedToSemiMap,
     palatalMap,
     atokFlickRowMap,
   } from "../word-utils";
 
-  export let isPlaying: boolean = false;
-  export let currentWord: { tokens: string[] } | null = null;
-  export let tokenIndex: number = 0;
+  interface Props {
+    isPlaying?: boolean;
+    currentWord?: { tokens: string[] } | null;
+    tokenIndex?: number;
+    composingText?: string;
+    oncorrect?: (event: { key: string }) => void;
+    onerror?: () => void;
+  }
 
-  const dispatch = createEventDispatcher<{
-    correct: { key: string };
-    error: void;
-  }>();
+  let {
+    isPlaying = false,
+    currentWord = null,
+    tokenIndex = 0,
+    composingText = $bindable(""),
+    oncorrect,
+    onerror,
+  }: Props = $props();
 
   let hiddenInputEl: HTMLInputElement;
   let compositionText = "";
@@ -23,7 +33,36 @@
   let compositionStartTime = 0; // 中間状態開始時刻（ミリ秒）
   const COMPOSITION_TIMEOUT = 3000; // 中間状態を許容する最大時間（ミリ秒）
 
-  export let composingText = ""; // UI表示用
+  let isLeniencyPeriod = false; // 単語切り替え直後の猶予期間
+  const LENIENCY_DURATION = 150; // 猶予期間（ミリ秒）
+  let leniencyTimer: ReturnType<typeof setTimeout>;
+
+  // 単語が変更されたら状態をリセットし、猶予期間を開始する
+  $effect(() => {
+    if (currentWord) {
+      // 状態リセット
+      isComposing = false;
+      compositionText = "";
+      composingText = "";
+      processingComplete = false;
+
+      // ブラウザの入力をクリア
+      if (hiddenInputEl) {
+        hiddenInputEl.value = "";
+      }
+
+      // 猶予期間開始
+      startLeniency();
+    }
+  });
+
+  function startLeniency() {
+    isLeniencyPeriod = true;
+    if (leniencyTimer) clearTimeout(leniencyTimer);
+    leniencyTimer = setTimeout(() => {
+      isLeniencyPeriod = false;
+    }, LENIENCY_DURATION);
+  }
 
   // 濁音・半濁音かどうかを判定
   function isVoicedCharacter(char: string): boolean {
@@ -66,21 +105,51 @@
 
   // 特殊文字(濁音、半濁音、拗音、小文字)かどうかを判定
   function isSpecialChar(char: string): boolean {
-    // 既存のマップや小文字集合で判定することで、複数文字（例: 'てぃ'）も正しく扱う
     if (char in voicedMap) return true;
     if (char in palatalMap) return true;
     if (isSmallChar(char)) return true;
 
-    // フォールバックで単一文字の特殊文字をテスト
     const specialChars =
       /[がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽぁぃぅぇぉっゃゅょゎ]/;
     return specialChars.test(char);
   }
 
-  // 中間状態がタイムアウトしたかチェック（true = タイムアウト = 中間状態を許容しない）
+  // 中間状態がタイムアウトしたかチェック
   function isCompositionTimedOut(): boolean {
     const elapsedTime = Date.now() - compositionStartTime;
     return elapsedTime > COMPOSITION_TIMEOUT;
+  }
+
+  // 小文字をフルサイズに正規化
+  function normalizeSmallChar(c: string): string {
+    const mapping: Record<string, string> = {
+      ぁ: "あ",
+      ぃ: "い",
+      ぅ: "う",
+      ぇ: "え",
+      ぉ: "お",
+      ゃ: "や",
+      ゅ: "ゆ",
+      ょ: "よ",
+      ゎ: "わ",
+      っ: "つ",
+    };
+    return mapping[c] || c;
+  }
+
+  // 入力文字が目標文字の段階的な中間状態かチェック
+  function isIntermidiateStep(inputChar: string, targetChar: string): boolean {
+    const normInput = normalizeSmallChar(inputChar);
+    if (normInput === targetChar) return true;
+    if (clearToVoicedMap[normInput] === targetChar) return true;
+    if (voicedToSemiMap[normInput] === targetChar) return true;
+    const voicedForm = clearToVoicedMap[normInput];
+    if (voicedForm && voicedToSemiMap[voicedForm] === targetChar) return true;
+    if (voicedMap[targetChar] === normInput) return true;
+    if (clearToVoicedMap[inputChar] === targetChar) return true;
+    if (voicedToSemiMap[inputChar] === targetChar) return true;
+    if (voicedMap[targetChar] === inputChar) return true;
+    return false;
   }
 
   function handleCompositionStart(e: CompositionEvent) {
@@ -88,7 +157,7 @@
     compositionText = "";
     composingText = "";
     processingComplete = false;
-    compositionStartTime = Date.now(); // 中間状態の開始時刻を記録
+    compositionStartTime = Date.now();
   }
 
   function handleCompositionUpdate(e: CompositionEvent) {
@@ -111,15 +180,11 @@
     const isPalatal = isPalatalized(targetToken);
     const isSmall = isSmallChar(targetToken);
 
-    // 常に入力を表示（`+page.svelte` と合わせる）
     composingText = inputText;
 
-    // 一致判定
     if (inputText === targetToken || inputText.endsWith(targetToken)) {
-      // 一致! 即座に処理
-      dispatch("correct", { key: targetToken });
-      processingComplete = true; // 判定完了フラグを設定
-      // finalize composing state so IME doesn't remain in composition
+      oncorrect?.({ key: targetToken });
+      processingComplete = true;
       isComposing = false;
       composingText = "";
       compositionText = "";
@@ -127,25 +192,16 @@
       const target = e.target as HTMLInputElement;
       if (target) {
         target.value = "";
-        // Try to notify the IME that composition ended (helps some mobile IMEs)
         try {
           const endEvent = new CompositionEvent("compositionend", {
             data: targetToken,
           });
           target.dispatchEvent(endEvent);
-        } catch (err) {
-          // ignore if not supported
-        }
+        } catch (err) {}
       }
     } else if (isPalatal) {
-      // 目標が拗音の場合：対応する基本文字 + 小さい文字のみ許容
-      // ただし IME によっては中間状態で小文字のフルサイズ（例: 'よ'）や濁音の中間状態（例: 'び'）が入るため、それも許容する
-
-      // 中間状態タイムアウト確認：タイムアウト時は正確な入力のみを許容
       const allowIntermediateStates = !isCompositionTimedOut();
-
       const baseChar = getPalaitalBaseChar(targetToken);
-      const expectedSmall = targetToken[1];
       const fullToSmall: Record<string, string> = {
         や: "ゃ",
         ゆ: "ゅ",
@@ -158,126 +214,100 @@
         え: "ぇ",
         お: "ぉ",
       };
-
-      // 半濁音（ぴゃ等）の場合、濁音の中間状態（び / びゃ）を許容
       const isSemiPalatal = baseChar in semiToVoiced;
       const intermediateVoiced = isSemiPalatal
         ? (semiToVoiced as any)[baseChar]
         : null;
 
       if (inputText.length === 1) {
-        // 基本文字だけ入力された場合は OK（小さい文字待ち）
         const baseRow = atokFlickRowMap[baseChar];
-
-        // 濁音・半濁音の場合、その基本文字の行も許容
-        const voicedBaseChar = getBaseChar(baseChar);
-        const voicedBaseRow =
-          voicedBaseChar !== baseChar ? atokFlickRowMap[voicedBaseChar] : null;
-
+        const normalizedInput = normalizeSmallChar(inputText);
         let okSingle = inputText === baseChar;
-
         if (!okSingle && allowIntermediateStates) {
           okSingle =
-            (intermediateVoiced && inputText === intermediateVoiced) ||
-            (baseRow &&
-              (baseRow.includes(inputText) ||
-                baseRow.includes(getBaseChar(inputText))));
+            !!intermediateVoiced && normalizedInput === intermediateVoiced;
+          if (!okSingle)
+            okSingle = isIntermidiateStep(normalizedInput, baseChar);
+          if (!okSingle) {
+            okSingle =
+              !!baseRow &&
+              (baseRow.includes(normalizedInput) ||
+                baseRow.includes(getBaseChar(normalizedInput)));
+          }
         }
-
         if (!okSingle) {
-          dispatch("error");
+          if (isLeniencyPeriod) {
+            composingText = "";
+            compositionText = "";
+            isComposing = false;
+            const target = e.target as HTMLInputElement;
+            if (target) target.value = "";
+            return;
+          }
+          onerror?.();
           processingComplete = true;
           composingText = "";
           compositionText = "";
           isComposing = false;
-
           const target = e.target as HTMLInputElement;
-          if (target) {
-            target.value = "";
-            try {
-              const endEvent = new CompositionEvent("compositionend", {
-                data: inputText,
-              });
-              target.dispatchEvent(endEvent);
-            } catch (err) {
-              // ignore if not supported
-            }
-          }
+          if (target) target.value = "";
         }
       } else if (inputText.length === 2) {
-        // 2文字入力された場合：
-        // ATOK フリック中間状態対応：
-        // - 第一文字が「基本文字の行内の任意の文字」または「基本文字の基本行」
-        // - 第二文字が「小文字系」（例: ゃ, ゅ, ょ または フルサイズ や, ゆ, よ）
         const firstChar = inputText[0];
         const secondChar = inputText[1];
         const secondIsSmallLike =
           isSmallChar(secondChar) || fullToSmall[secondChar] !== undefined;
-
-        // 第一文字チェック：基本文字、中間濁音、または基本文字の行内、または基本文字の基本行内
         const baseRow = atokFlickRowMap[baseChar];
-        const voicedBaseChar = getBaseChar(baseChar);
-        const voicedBaseRow =
-          voicedBaseChar !== baseChar ? atokFlickRowMap[voicedBaseChar] : null;
-
         let firstMatches = firstChar === baseChar;
-
         if (!firstMatches && allowIntermediateStates) {
+          const normalizedFirst = normalizeSmallChar(firstChar);
           firstMatches =
-            (intermediateVoiced && firstChar === intermediateVoiced) ||
-            (baseRow &&
-              (baseRow.includes(firstChar) ||
-                baseRow.includes(getBaseChar(firstChar))));
+            !!intermediateVoiced && normalizedFirst === intermediateVoiced;
+          if (!firstMatches)
+            firstMatches = isIntermidiateStep(normalizedFirst, baseChar);
+          if (!firstMatches) {
+            firstMatches =
+              !!baseRow &&
+              (baseRow.includes(normalizedFirst) ||
+                baseRow.includes(getBaseChar(normalizedFirst)));
+          }
         }
-
         if (!firstMatches || !secondIsSmallLike) {
-          // 明らかに異なる組み合わせはミス
-          dispatch("error");
+          if (isLeniencyPeriod) {
+            composingText = "";
+            compositionText = "";
+            isComposing = false;
+            const target = e.target as HTMLInputElement;
+            if (target) target.value = "";
+            return;
+          }
+          onerror?.();
           processingComplete = true;
           composingText = "";
           compositionText = "";
           isComposing = false;
-
           const target = e.target as HTMLInputElement;
-          if (target) {
-            target.value = "";
-            try {
-              const endEvent = new CompositionEvent("compositionend", {
-                data: inputText,
-              });
-              target.dispatchEvent(endEvent);
-            } catch (err) {
-              // ignore if not supported
-            }
-          }
+          if (target) target.value = "";
         }
-        // 正確な小文字であれば earlier の "inputText === targetToken" 判定ですでに処理済みになる。
       } else if (inputText.length > 2) {
-        // 3文字以上はミス
-        dispatch("error");
+        if (isLeniencyPeriod) {
+          composingText = "";
+          compositionText = "";
+          isComposing = false;
+          const target = e.target as HTMLInputElement;
+          if (target) target.value = "";
+          return;
+        }
+        onerror?.();
         processingComplete = true;
         composingText = "";
         compositionText = "";
         isComposing = false;
-
         const target = e.target as HTMLInputElement;
-        if (target) {
-          target.value = "";
-          try {
-            const endEvent = new CompositionEvent("compositionend", {
-              data: inputText,
-            });
-            target.dispatchEvent(endEvent);
-          } catch (err) {
-            // ignore if not supported
-          }
-        }
+        if (target) target.value = "";
       }
     } else if (isVoiced) {
-      // 目標が濁音・半濁音の場合
-      // 中間状態タイムアウト確認：タイムアウト時は正確な入力のみを許容
       const allowIntermediateStates = !isCompositionTimedOut();
-
       const baseChar = getBaseChar(targetToken);
       const isSemiVoiced = targetToken in semiToVoiced;
       const intermediateDevoiced = isSemiVoiced
@@ -285,44 +315,40 @@
         : null;
 
       if (inputText.length > 0) {
-        // 許容される入力：基本文字、（半濁音なら対応する濁音、目標文字）
         const baseRow = atokFlickRowMap[baseChar];
         let isValid = inputText === baseChar || inputText === targetToken;
-
         if (!isValid && allowIntermediateStates) {
+          const normalizedInput = normalizeSmallChar(inputText);
           isValid =
-            (intermediateDevoiced && inputText === intermediateDevoiced) ||
-            (baseRow &&
-              (baseRow.includes(inputText) ||
-                baseRow.includes(getBaseChar(inputText))));
+            !!intermediateDevoiced && normalizedInput === intermediateDevoiced;
+          if (!isValid)
+            isValid = isIntermidiateStep(normalizedInput, targetToken);
+          if (!isValid) {
+            isValid =
+              !!baseRow &&
+              (baseRow.includes(normalizedInput) ||
+                baseRow.includes(getBaseChar(normalizedInput)));
+          }
         }
-
         if (!isValid) {
-          // 許容外の入力 = ミス
-          dispatch("error");
+          if (isLeniencyPeriod) {
+            composingText = "";
+            compositionText = "";
+            isComposing = false;
+            const target = e.target as HTMLInputElement;
+            if (target) target.value = "";
+            return;
+          }
+          onerror?.();
           processingComplete = true;
           composingText = "";
           compositionText = "";
           isComposing = false;
-
           const target = e.target as HTMLInputElement;
-          if (target) {
-            target.value = "";
-            // 変換を確定して IME の状態をリセット
-            try {
-              const endEvent = new CompositionEvent("compositionend", {
-                data: inputText,
-              });
-              target.dispatchEvent(endEvent);
-            } catch (err) {
-              // ignore if not supported
-            }
-          }
+          if (target) target.value = "";
         }
       }
     } else if (isSmall) {
-      // 目標が小さい文字の場合：小さい文字またはそのフルサイズを許容
-      // （フリック入力では フルサイズ→小さい文字 に変換される）
       const fullToSmall: Record<string, string> = {
         や: "ゃ",
         ゆ: "ゅ",
@@ -335,99 +361,78 @@
         え: "ぇ",
         お: "ぉ",
       };
-
       if (inputText.length > 0) {
         const isValid =
           isSmallChar(inputText) || fullToSmall[inputText] === targetToken;
         if (!isValid) {
-          // 小さい文字以外が入力されたのでミス
-          dispatch("error");
+          if (isLeniencyPeriod) {
+            composingText = "";
+            compositionText = "";
+            isComposing = false;
+            const target = e.target as HTMLInputElement;
+            if (target) target.value = "";
+            return;
+          }
+          onerror?.();
           processingComplete = true;
           composingText = "";
           compositionText = "";
           isComposing = false;
-
           const target = e.target as HTMLInputElement;
-          if (target) {
-            target.value = "";
-            // 変換を確定して IME の状態をリセット
-            try {
-              const endEvent = new CompositionEvent("compositionend", {
-                data: inputText,
-              });
-              target.dispatchEvent(endEvent);
-            } catch (err) {
-              // ignore if not supported
-            }
-          }
+          if (target) target.value = "";
         }
       }
     } else {
-      // 目標が基本文字の場合
-      // 中間状態タイムアウト確認：タイムアウト時は正確な入力のみを許容
       const allowIntermediateStates = !isCompositionTimedOut();
-
       if (inputText === targetToken) {
-        // 基本文字のみ、OK（濁点待ち）
+        // OK
       } else if (inputText.length > 1) {
-        // 2文字以上で不一致 = 濁点なしで追加入力 = ミス
-        dispatch("error");
+        if (isLeniencyPeriod) {
+          composingText = "";
+          compositionText = "";
+          isComposing = false;
+          const target = e.target as HTMLInputElement;
+          if (target) target.value = "";
+          return;
+        }
+        onerror?.();
         processingComplete = true;
         composingText = "";
         compositionText = "";
         isComposing = false;
-
         const target = e.target as HTMLInputElement;
-        if (target) {
-          target.value = "";
-          // 変換を確定して IME の状態をリセット
-          try {
-            const endEvent = new CompositionEvent("compositionend", {
-              data: inputText,
-            });
-            target.dispatchEvent(endEvent);
-          } catch (err) {
-            // ignore if not supported
-          }
-        }
+        if (target) target.value = "";
       } else if (inputText.length === 1 && inputText !== targetToken) {
-        // 1文字で不一致の場合、ATOK フリック行の中間状態として許容するか判定
         const targetFlickRow = atokFlickRowMap[targetToken];
-        const inputInFlickRow =
-          targetFlickRow && targetFlickRow.includes(inputText);
-
-        // 中間状態がタイムアウト時は、フリック行のメンバーも拒否
-        const isValidIntermediate = allowIntermediateStates && inputInFlickRow;
-
+        const normalizedInput = normalizeSmallChar(inputText);
+        const inputInFlickRow = !!(
+          targetFlickRow && targetFlickRow.includes(normalizedInput)
+        );
+        const isStepPattern = isIntermidiateStep(normalizedInput, targetToken);
+        const isValidIntermediate =
+          allowIntermediateStates && (inputInFlickRow || isStepPattern);
         if (!isValidIntermediate) {
-          // フリック行に含まれないので、ミス（タイムアウト時も同様）
-          dispatch("error");
+          if (isLeniencyPeriod) {
+            composingText = "";
+            compositionText = "";
+            isComposing = false;
+            const target = e.target as HTMLInputElement;
+            if (target) target.value = "";
+            return;
+          }
+          onerror?.();
           processingComplete = true;
           composingText = "";
           compositionText = "";
           isComposing = false;
-
           const target = e.target as HTMLInputElement;
-          if (target) {
-            target.value = "";
-            // 変換を確定して IME の状態をリセット
-            try {
-              const endEvent = new CompositionEvent("compositionend", {
-                data: inputText,
-              });
-              target.dispatchEvent(endEvent);
-            } catch (err) {
-              // ignore if not supported
-            }
-          }
+          if (target) target.value = "";
         }
-        // inputInFlickRow が true の場合、何もしない（入力を許容）
       }
     }
   }
 
   function handleCompositionEnd(e: CompositionEvent) {
-    // 既に判定済みの場合はスキップ
     if (processingComplete) {
       isComposing = false;
       compositionText = "";
@@ -447,16 +452,12 @@
       return;
     }
 
-    // エンターで確定された場合のミス判定
     const finalText = e.data || compositionText;
     if (finalText && currentWord && tokenIndex < currentWord.tokens.length) {
       const targetToken = currentWord.tokens[tokenIndex];
-
-      // 特殊文字でない場合、または不一致の場合はミス
       if (!isSpecialChar(targetToken) || finalText !== targetToken) {
-        // ただし、既に処理済みの場合はスキップ
         if (finalText !== targetToken) {
-          dispatch("error");
+          onerror?.();
         }
       }
     }
@@ -467,13 +468,9 @@
 
   function handleInput(e: Event) {
     if (!isPlaying) return;
-
     const target = e.target as HTMLInputElement;
     const val = target.value;
-
     if (val.length > 0) {
-      // フリック入力はcompositionイベントで処理
-      // ここでは入力をクリアするのみ
       if (!isComposing) {
         target.value = "";
       }
@@ -493,10 +490,10 @@
   autocorrect="off"
   autocapitalize="none"
   spellcheck="false"
-  on:input={handleInput}
-  on:compositionstart={handleCompositionStart}
-  on:compositionupdate={handleCompositionUpdate}
-  on:compositionend={handleCompositionEnd}
+  oninput={handleInput}
+  oncompositionstart={handleCompositionStart}
+  oncompositionupdate={handleCompositionUpdate}
+  oncompositionend={handleCompositionEnd}
   style="position: absolute; opacity: 0; pointer-events: none;"
 />
 
