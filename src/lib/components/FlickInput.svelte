@@ -201,9 +201,21 @@
         processingComplete = true;
         composingText = "";
         compositionText = "";
+        isComposing = false;
 
         const target = e.target as HTMLInputElement;
-        if (target) target.value = "";
+        if (target) {
+          target.value = "";
+          // 変換を確定して IME の状態をリセット
+          try {
+            const endEvent = new CompositionEvent("compositionend", {
+              data: inputText,
+            });
+            target.dispatchEvent(endEvent);
+          } catch (err) {
+            // ignore if not supported
+          }
+        }
       }
     } else if (isVoiced) {
       // 目標が濁音・半濁音の場合：対応する基本文字のみ許容
@@ -218,9 +230,21 @@
         processingComplete = true;
         composingText = "";
         compositionText = "";
+        isComposing = false;
 
         const target = e.target as HTMLInputElement;
-        if (target) target.value = "";
+        if (target) {
+          target.value = "";
+          // 変換を確定して IME の状態をリセット
+          try {
+            const endEvent = new CompositionEvent("compositionend", {
+              data: inputText,
+            });
+            target.dispatchEvent(endEvent);
+          } catch (err) {
+            // ignore if not supported
+          }
+        }
       }
     } else if (isSmall) {
       // 目標が小さい文字の場合：小さい文字のみ許容
@@ -230,9 +254,21 @@
         processingComplete = true;
         composingText = "";
         compositionText = "";
+        isComposing = false;
 
         const target = e.target as HTMLInputElement;
-        if (target) target.value = "";
+        if (target) {
+          target.value = "";
+          // 変換を確定して IME の状態をリセット
+          try {
+            const endEvent = new CompositionEvent("compositionend", {
+              data: inputText,
+            });
+            target.dispatchEvent(endEvent);
+          } catch (err) {
+            // ignore if not supported
+          }
+        }
       }
     } else {
       // 目標が基本文字の場合
@@ -244,18 +280,42 @@
         processingComplete = true;
         composingText = "";
         compositionText = "";
+        isComposing = false;
 
         const target = e.target as HTMLInputElement;
-        if (target) target.value = "";
+        if (target) {
+          target.value = "";
+          // 変換を確定して IME の状態をリセット
+          try {
+            const endEvent = new CompositionEvent("compositionend", {
+              data: inputText,
+            });
+            target.dispatchEvent(endEvent);
+          } catch (err) {
+            // ignore if not supported
+          }
+        }
       } else if (inputText.length === 1 && inputText !== targetToken) {
         // 1文字で不一致 = ミス
         dispatch("error");
         processingComplete = true;
         composingText = "";
         compositionText = "";
+        isComposing = false;
 
         const target = e.target as HTMLInputElement;
-        if (target) target.value = "";
+        if (target) {
+          target.value = "";
+          // 変換を確定して IME の状態をリセット
+          try {
+            const endEvent = new CompositionEvent("compositionend", {
+              data: inputText,
+            });
+            target.dispatchEvent(endEvent);
+          } catch (err) {
+            // ignore if not supported
+          }
+        }
       }
     }
   }
