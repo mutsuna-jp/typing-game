@@ -130,9 +130,7 @@
   }
 
   .char.wrong {
-    color: oklch(100% 0 0);
-    background: oklch(0% 0 0);
-    animation: shake 0.3s;
+    color: var(--error);
   }
 
   @keyframes blink-caret {
@@ -142,20 +140,6 @@
     }
     50% {
       border-bottom: 4px solid oklch(100% 0 0);
-    }
-  }
-
-  @keyframes shake {
-    0%,
-    100% {
-      transform: translateX(0);
-    }
-    25%,
-    75% {
-      transform: translateX(-5px);
-    }
-    50% {
-      transform: translateX(5px);
     }
   }
 

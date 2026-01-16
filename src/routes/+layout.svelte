@@ -1,7 +1,7 @@
 <script lang="ts">
   import "../app.css";
   import favicon from "$lib/assets/favicon.png";
-  import { isPlaying } from "$lib/stores";
+  import { isPlaying, isShaking } from "$lib/stores";
   import { page } from "$app/stores";
   let { children } = $props();
 </script>
@@ -12,7 +12,11 @@
 
 <div id="tv-set">
   {#key $page.url.pathname}
-    <div id="screen" class:turn-on-anim={!$isPlaying}>
+    <div
+      id="screen"
+      class:turn-on-anim={!$isPlaying}
+      class:shaking={$isShaking}
+    >
       <div id="screen-content">
         {@render children()}
       </div>
@@ -182,6 +186,9 @@
     }
     .turn-on-anim {
       animation: turn-on 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+    }
+    .shaking {
+      animation: shake 0.1s ease-in-out 0s 2;
     }
   }
 </style>
